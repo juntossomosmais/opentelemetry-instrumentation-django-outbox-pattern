@@ -64,21 +64,21 @@ from .package import _instruments
 from .utils.shared_types import CallbackHookT
 from .version import __version__
 
-_CTX_KEY = "__otel_django_stomp_span"
+_CTX_KEY = "__otel_django_outbox_pattern_span"
 
 local_threading = threading.local()
 
 
-class DjangoStompInstrumentor(BaseInstrumentor):
+class DjangoOutboxPatternInstrumentor(BaseInstrumentor):
     def instrumentation_dependencies(self) -> typing.Collection[str]:
         """
-        Function to check compatibility with dependencies package(django-stomp)
+        Function to check compatibility with dependencies package(django-outbox-pattern)
         """
         return _instruments
 
     def _uninstrument(self, **kwargs):
         """
-        Function to unwrap publisher and consumer functions from django-stomp
+        Function to unwrap publisher and consumer functions from django-outbox-pattern
         """
         if hasattr(self, "__opentelemetry_tracer_provider"):
             delattr(self, "__opentelemetry_tracer_provider")
@@ -87,7 +87,7 @@ class DjangoStompInstrumentor(BaseInstrumentor):
 
     def _instrument(self, **kwargs) -> None:
         """
-        Instrument function to initialize wrappers in publisher and consumer functions from django-stomp.
+        Instrument function to initialize wrappers in publisher and consumer functions from django-outbox-pattern.
 
         Args:
             kwargs (typing.Dict[str, typing.Any]):
@@ -99,8 +99,8 @@ class DjangoStompInstrumentor(BaseInstrumentor):
 
         Returns:
         """
-        instrument_django_stomp = getattr(settings, "OTEL_PYTHON_DJANGO_STOMP_INSTRUMENT", True)
-        if not instrument_django_stomp:
+        instrument_django_outbox_pattern = getattr(settings, "OTEL_PYTHON_DJANGO_OUTBOX_PATTERN_INSTRUMENT", True)
+        if not instrument_django_outbox_pattern:
             return None
 
         tracer_provider: typing.Optional[TracerProvider] = kwargs.get("tracer_provider", None)

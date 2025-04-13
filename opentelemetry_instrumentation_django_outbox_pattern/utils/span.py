@@ -12,9 +12,10 @@ from opentelemetry.trace import SpanKind
 def enrich_span_with_host_data(span: Span):
     """Helper function add broker SpanAttributes"""
     system = getattr(settings, "STOMP_SYSTEM", None) or "rabbitmq"
+    outbox_pattern_settings =  getattr(settings, "DJANGO_OUTBOX_PATTERN")
     attributes = {
-        SpanAttributes.NET_PEER_NAME: settings.STOMP_SERVER_HOST,
-        SpanAttributes.NET_PEER_PORT: settings.STOMP_SERVER_PORT,
+        SpanAttributes.NET_PEER_NAME: outbox_pattern_settings["DEFAULT_STOMP_HOST_AND_PORTS"][0]
+        SpanAttributes.NET_PEER_PORT: outbox_pattern_settings["DEFAULT_STOMP_HOST_AND_PORTS"][0],
         SpanAttributes.MESSAGING_SYSTEM: system,
     }
     span.set_attributes(attributes)

@@ -30,36 +30,46 @@ class ConsumerInstrument:
     @staticmethod
     def instrument(tracer: Tracer, callback_hook: CallbackHookT = None):
         """Instrumentor function to create span and instrument consumer"""
+        def wrapped_import_string(dotted_path):
+            callback_function = import_string(dotted_path)
+            
+            def instrument_callback(payload):
 
-        def wrapper_import_from_string(wrapped, instance, args, kwargs):
-            frame = args[0]
-            headers, body = frame.headers, frame.body
+                try:
+                    headers = payload.headers
+                    host, port = settings.DJANGO_OUTBOX_PATTERN["DEFAULT_STOMP_HOST_AND_PORTS"][0]
+                    destination = headers.get("destination")
+                except Exception as e:
+                    logger.warn("Could not trace Consumer(import_string): {}".format(e))
+                    return callback_function(payload)
 
-            ctx = propagate.extract(headers, getter=_django_outbox_pattern_getter)
-            if not ctx:
-                ctx = context.get_current()
-            token = context.attach(ctx)
+                ctx = propagate.extract(headers, getter=_django_outbox_pattern_getter)
+                if not ctx:
+                    ctx = context.get_current()
+                token = context.attach(ctx)
 
-            span = get_span(
-                tracer=tracer,
-                destination=headers.get("tshoot-destination"),
-                span_kind=SpanKind.CONSUMER,
-                headers=headers,
-                body=body,
-                span_name="CONSUMER",
-                operation=str(MessagingOperationValues.RECEIVE.value),
-            )
+                span = get_span(
+                    tracer=tracer,
+                    destination=destination,
+                    span_kind=SpanKind.CONSUMER,
+                    headers=headers,
+                    body=body,
+                    span_name="CONSUMER",
+                    operation=str(MessagingOperationValues.RECEIVE.value),
+                )
 
-            try:
-                with trace.use_span(span, end_on_exit=True):
-                    if callback_hook:
-                        try:
-                            callback_hook(span, body, headers)
-                        except Exception as hook_exception:  # pylint: disable=W0703
-                            _logger.exception(hook_exception)
-                    return wrapped(*args, **kwargs)
-            finally:
-                context.detach(token)
+                try:
+                    with trace.use_span(span, end_on_exit=True):
+                        if callback_hook:
+                            try:
+                                callback_hook(span, body, headers)
+                            except Exception as hook_exception:  # pylint: disable=W0703
+                                _logger.exception(hook_exception)
+                        return callback_function(payload)
+                finally:
+                    context.detach(token)
+
+            return instrumented_callback
 
         def common_ack_or_nack_span(span_name: str, wrapped_function: typing.Callable):
             span = tracer.start_span(name=span_name, kind=SpanKind.CONSUMER)

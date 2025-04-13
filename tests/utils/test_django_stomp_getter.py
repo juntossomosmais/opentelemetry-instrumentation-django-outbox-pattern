@@ -2,7 +2,7 @@ import pytest
 
 from opentelemetry.propagators.textmap import CarrierT
 
-from opentelemetry_instrumentation_django_stomp.utils.django_stomp_getter import DjangoStompGetter
+from opentelemetry_instrumentation_django_outbox_pattern.utils.django_stomp_getter import DjangoStompGetter
 
 
 class TestDjangoStompGetter:

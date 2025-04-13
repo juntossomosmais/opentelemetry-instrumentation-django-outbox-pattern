@@ -4,7 +4,7 @@ trigger:
       - main
   paths:
     include:
-      - opentelemetry_instrumentation_django_stomp
+      - opentelemetry_instrumentation_django_outbox_pattern
       - poetry.lock
 pr:
   branches:
@@ -12,7 +12,7 @@ pr:
       - main
   paths:
     include:
-      - opentelemetry_instrumentation_django_stomp
+      - opentelemetry_instrumentation_django_outbox_pattern
       - poetry.lock
 
 resources:

@@ -8,7 +8,7 @@ from django_stomp.builder import build_publisher
 from opentelemetry import trace
 from opentelemetry.semconv.trace import SpanAttributes
 
-from opentelemetry_instrumentation_django_stomp import DjangoStompInstrumentor
+from opentelemetry_instrumentation_django_outbox_pattern import DjangoOutboxPatternInstrumentor
 from tests.support.helpers_tests import CustomFakeException
 from tests.support.helpers_tests import get_latest_message_from_destination_using_test_listener
 from tests.support.otel_helpers import TestBase
@@ -38,8 +38,8 @@ class PublisherInstrumentBase(TestBase):
             SpanAttributes.MESSAGING_CONVERSATION_ID: self.correlation_id,
             SpanAttributes.MESSAGING_DESTINATION: self.test_queue_name,
             SpanAttributes.MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES: mock_payload_size,
-            SpanAttributes.NET_PEER_NAME: django_settings.STOMP_SERVER_HOST,
-            SpanAttributes.NET_PEER_PORT: django_settings.STOMP_SERVER_PORT,
+            SpanAttributes.NET_PEER_NAME: settings.DJANGO_OUTBOX_PATTERN["DEFAULT_STOMP_HOST_AND_PORTS"][0],
+            SpanAttributes.NET_PEER_PORT: settings.DJANGO_OUTBOX_PATTERN["DEFAULT_STOMP_HOST_AND_PORTS"][1],
             SpanAttributes.MESSAGING_SYSTEM: "rabbitmq",
         }
 
@@ -105,7 +105,7 @@ class TestPublisherInstrumentSupress(PublisherInstrumentBase):
     def test_should_not_generate_span_if_suppress_key_is_in_context(self, settings):
         # Act
         settings.OTEL_PYTHON_DJANGO_STOMP_INSTRUMENT = False
-        DjangoStompInstrumentor().instrument()
+        DjangoOutboxPatternInstrumentor().instrument()
         publisher = build_publisher(f"test-publisher-{uuid4()}")
         publisher.send(
             queue=self.test_queue_name, body={"fake": "body"}, headers={"correlation-id": self.correlation_id}

@@ -17,7 +17,7 @@ services:
         "./scripts/start-tests.sh",
       ]
     networks:
-      - instrumentationdjangooutboxpattern
+      - instrumentation
 
   lint-formatter:
     build: *dockerfile-dev-build
@@ -25,7 +25,7 @@ services:
       - .:/app
     command: ["./scripts/start-formatter-lint.sh"]
     networks:
-      - instrumentationdjangooutboxpattern
+      - instrumentation
 
   broker-rabbitmq:
     image: rabbitmq:4-management
@@ -40,7 +40,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - instrumentationdjangooutboxpattern
+      - instrumentation
 
 networks:
-  instrumentationdjangooutboxpattern:
+  instrumentation:

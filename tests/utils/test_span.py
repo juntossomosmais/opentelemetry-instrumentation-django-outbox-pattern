@@ -5,7 +5,7 @@ import pytest
 from opentelemetry.semconv.trace import SpanAttributes
 from opentelemetry.trace import SpanKind
 
-from opentelemetry_instrumentation_django_stomp.utils.span import get_span
+from opentelemetry_instrumentation_django_outbox_pattern.utils.span import get_span
 
 
 class TestSpan:
@@ -53,9 +53,8 @@ class TestSpan:
         fake_broker_host = test_params["fake_broker_host"]
         fake_broker_port = test_params["fake_broker_port"]
         fake_broker_system = test_params.get("fake_broker_system", False)
-
-        settings.STOMP_SERVER_HOST = fake_broker_host
-        settings.STOMP_SERVER_PORT = fake_broker_port
+        
+        settings.DJANGO_OUTBOX_PATTERN["DEFAULT_STOMP_HOST_AND_PORTS"] = [(fake_broker_host,fake_broker_port)]
         if fake_broker_system:
             settings.STOMP_SYSTEM = fake_broker_system
 

@@ -16,19 +16,15 @@ def mock_payload_size(mocker):
 
 def pytest_configure():
     settings.configure(
-        INSTALLED_APPS=["opentelemetry_instrumentation_django_stomp", "django_stomp"],
-        STOMP_SERVER_HOST=os.getenv("STOMP_SERVER_HOST"),
-        STOMP_SERVER_PORT=os.getenv("STOMP_SERVER_PORT"),
-        STOMP_SERVER_STANDBY_HOST=os.getenv("STOMP_SERVER_STANDBY_HOST"),
-        STOMP_SERVER_STANDBY_PORT=os.getenv("STOMP_SERVER_STANDBY_PORT"),
-        STOMP_SERVER_USER=os.getenv("STOMP_SERVER_USER"),
-        STOMP_SERVER_PASSWORD=os.getenv("STOMP_SERVER_PASSWORD"),
-        STOMP_USE_SSL=os.getenv("STOMP_USE_SSL"),
-        STOMP_LISTENER_CLIENT_ID=os.getenv("STOMP_LISTENER_CLIENT_ID"),
-        STOMP_CORRELATION_ID_REQUIRED=os.getenv("STOMP_CORRELATION_ID_REQUIRED"),
-        STOMP_PROCESS_MSG_ON_BACKGROUND=os.getenv("STOMP_PROCESS_MSG_ON_BACKGROUND"),
-        STOMP_OUTGOING_HEARTBEAT=os.getenv("STOMP_OUTGOING_HEARTBEAT"),
-        STOMP_INCOMING_HEARTBEAT=os.getenv("STOMP_INCOMING_HEARTBEAT"),
+        INSTALLED_APPS=["opentelemetry_instrumentation_django_outbox_pattern", "django_outbox_pattern"],
+        DJANGO_OUTBOX_PATTERN = {
+            "DEFAULT_STOMP_HOST_AND_PORTS": [(os.getenv("STOMP_SERVER_HOST"), os.getenv("STOMP_SERVER_PORT"))],
+            "DEFAULT_STOMP_USERNAME": os.getenv("STOMP_SERVER_USER"),
+            "DEFAULT_STOMP_PASSCODE": os.getenv("STOMP_SERVER_PASSWORD"),
+            "DEFAULT_STOMP_USE_SSL": os.getenv("STOMP_USE_SSL"),
+            "DEFAULT_STOMP_VHOST": os.getenv("DEFAULT_STOMP_VHOST")
+            "DEFAULT_CONNECTION_CLASS": "stomp.StompConnection12",
+        },
         DATABASES={
             "default": {
                 "ENGINE": os.getenv("DB_ENGINE", "django.db.backends.sqlite3"),

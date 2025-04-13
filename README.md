@@ -84,17 +84,10 @@ The `DjangoOutboxPatternInstrumentor` can receive three optional parameters:
 
 #### PUBLISHER example
 
-With the django-stomp, we can publish a message to a broker using `publisher.send` and the instrumentator
-can include a span with telemetry data in this function utilization.
+With the django-outbox-pattern, we can publish a message to a broker using `publish` management command and the instrumentator can include a span with telemetry data in this function utilization.
 
-```python
-    from uuid import uuid4
-    from django_stomp.builder import build_publisher
-    publisher = build_publisher(f"publisher-unique-name-{uuid4()}")
-    publisher.send(
-        queue='/queue/a-destination',
-        body={"a": "random","body": "message"},
-    )
+```bash
+    python manage.py publish
 ```
 
 The publisher span had "PUBLISHER" name.
@@ -102,11 +95,10 @@ The publisher span had "PUBLISHER" name.
 ![publisher example](docs/publisher_example.png?raw=true)
 
 #### CONSUMER example
-With the django-stomp, we create a simple consumer using pubsub command and the instrumentator
-can include a span with telemetry data in this function utilization.
+With the django-outbox-pattern, we create a simple consumer using subscribe management command and the instrumentator can include a span with telemetry data in this function utilization.
 
 ```bash
-   python manage.py pubsub QUEUE_NAME callback_function_to_consume_message
+   python manage.py subscribe 'dotted.path.to.callback` 'destination' 'queue_name'
 ```
 
 Consumer spans can generate up to three types:

@@ -1,16 +1,20 @@
-import json
-import logging
-
+from io import StringIO
+from unittest.mock import PropertyMock
+from unittest.mock import patch
 from uuid import uuid4
 
 from django.conf import settings as django_settings
-from django_stomp.builder import build_publisher
-from opentelemetry import trace
+from django.core.management import call_command
+from django_outbox_pattern.management.commands.publish import Command
+from django_outbox_pattern.models import Published
 from opentelemetry.semconv.trace import SpanAttributes
+from request_id_django_log import local_threading
 
-from opentelemetry_instrumentation_django_outbox_pattern import DjangoOutboxPatternInstrumentor
+from opentelemetry_instrumentation_django_outbox_pattern.instrumentors.publisher_instrument import (
+    _logger as publisher_logger,
+)
+from opentelemetry_instrumentation_django_outbox_pattern.utils.formatters import format_publisher_destination
 from tests.support.helpers_tests import CustomFakeException
-from tests.support.helpers_tests import get_latest_message_from_destination_using_test_listener
 from tests.support.otel_helpers import TestBase
 from tests.support.otel_helpers import get_traceparent_from_span
 
@@ -22,100 +26,212 @@ class PublisherInstrumentBase(TestBase):
     fake_payload_body = None
     publisher = None
 
-    def setup_class(self):
+    def setUp(self):
         self.publisher_hook = self.hook_callback
-        super().setup_class(self)
-
-    def setup_method(self):
-        # Arrange
-        self.test_queue_name = f"/queue/test-publisher-queue-{uuid4()}"
+        self.test_queue_name = f"/exchange/test-exchange/test-publisher-queue-{uuid4()}"
         self.correlation_id = f"{uuid4()}"
+        local_threading.request_id = self.correlation_id
         self.fake_payload_body = {"fake": "body"}
-        self.publisher = build_publisher(f"test-publisher-{uuid4()}")
+        super().setUp()
 
     def expected_span_attributes(self, mock_payload_size):
+        host, port = django_settings.DJANGO_OUTBOX_PATTERN["DEFAULT_STOMP_HOST_AND_PORTS"][0]
         return {
-            SpanAttributes.MESSAGING_CONVERSATION_ID: self.correlation_id,
             SpanAttributes.MESSAGING_DESTINATION: self.test_queue_name,
-            SpanAttributes.MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES: mock_payload_size,
-            SpanAttributes.NET_PEER_NAME: settings.DJANGO_OUTBOX_PATTERN["DEFAULT_STOMP_HOST_AND_PORTS"][0],
-            SpanAttributes.NET_PEER_PORT: settings.DJANGO_OUTBOX_PATTERN["DEFAULT_STOMP_HOST_AND_PORTS"][1],
+            SpanAttributes.MESSAGING_CONVERSATION_ID: self.correlation_id,
+            SpanAttributes.MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES: mock_payload_size("x"),
+            SpanAttributes.NET_PEER_NAME: host,
+            SpanAttributes.NET_PEER_PORT: port,
             SpanAttributes.MESSAGING_SYSTEM: "rabbitmq",
         }
 
 
-class TestPublisherInstrument(PublisherInstrumentBase):
+class TestPublisherSaveInstrument(PublisherInstrumentBase):
     @staticmethod
     def hook_callback(span, body, headers):
         assert headers.get("traceparent", None) == get_traceparent_from_span(span)
 
+    @patch("sys.getsizeof", return_value=1)
     def test_should_match_traceparent_header_message_equals_to_traceparent_context_span(self, mock_payload_size):
         # Act
-        self.publisher.send(
-            queue=self.test_queue_name, body={"fake": "body"}, headers={"correlation-id": self.correlation_id}
+        published_create = Published.objects.create(
+            destination=self.test_queue_name,
+            body=self.fake_payload_body,
         )
 
         # Assert
-        # getting message without create a consumer span
-        received_message = get_latest_message_from_destination_using_test_listener(self.test_queue_name)
-        received_message_headers, received_message_body = received_message
         finished_spans = self.get_finished_spans()
-        publisher_span = finished_spans.by_name("PUBLISHER")
-
-        assert json.loads(received_message_body) == self.fake_payload_body
-        assert received_message_headers.get("traceparent") == get_traceparent_from_span(publisher_span)
-        assert dict(publisher_span.attributes) == self.expected_span_attributes(mock_payload_size)
+        publisher_span = finished_spans.by_name(f"save published {self.test_queue_name}")
+        self.assertEqual(published_create.headers["traceparent"], get_traceparent_from_span(publisher_span))
+        self.assertEqual(dict(publisher_span.attributes), self.expected_span_attributes(mock_payload_size))
 
 
-class TestPublisherInstrumentHookRaises(PublisherInstrumentBase):
+class TestPublisherSaveInstrumentRaises(PublisherInstrumentBase):
     @staticmethod
     def hook_callback(span, body, headers):
         assert headers.get("traceparent", None) == get_traceparent_from_span(span)
         raise CustomFakeException("fake exception")
 
-    def test_should_log_exception_if_it_was_raised_inside_hook_function(self, mock_payload_size, caplog):
-        # Arrange
-        caplog.set_level(logging.WARNING)
-
+    @patch("sys.getsizeof", return_value=1)
+    def test_should_log_exception_if_it_was_raised_inside_hook_function(self, mock_payload_size):
         # Act
-        self.publisher.send(
-            queue=self.test_queue_name, body={"fake": "body"}, headers={"correlation-id": self.correlation_id}
-        )
+        with self.assertLogs(logger=publisher_logger, level="WARNING") as publisher_log:
+            published_create = Published.objects.create(
+                destination=self.test_queue_name,
+                body=self.fake_payload_body,
+            )
 
         # Assert
-        # getting message without create a consumer span
-        received_message = get_latest_message_from_destination_using_test_listener(self.test_queue_name)
-        received_message_headers, received_message_body = received_message
         finished_spans = self.get_finished_spans()
-        publisher_span = finished_spans.by_name("PUBLISHER")
+        publisher_span = finished_spans.by_name(f"save published {self.test_queue_name}")
+        self.assertEqual(published_create.headers["traceparent"], get_traceparent_from_span(publisher_span))
+        self.assertEqual(dict(publisher_span.attributes), self.expected_span_attributes(mock_payload_size))
+        self.assertEqual(len(publisher_log.output), 1)
+        self.assertIn("An exception occurred in the callback hook.", publisher_log.output[0])
+        self.assertIn('CustomFakeException("fake exception")', publisher_log.output[0])
 
-        assert json.loads(received_message_body) == self.fake_payload_body
-        assert received_message_headers.get("traceparent") == get_traceparent_from_span(publisher_span)
-        assert dict(publisher_span.attributes) == self.expected_span_attributes(mock_payload_size)
-        assert len(caplog.records) == 1
-        assert caplog.records[0].message == "fake exception"
-
-
-class TestPublisherInstrumentSupress(PublisherInstrumentBase):
-    def setup_class(self):
-        result = self.create_tracer_provider()
-        self.tracer_provider, self.memory_exporter = result
-        trace.set_tracer_provider(self.tracer_provider)
-
-    def test_should_not_generate_span_if_suppress_key_is_in_context(self, settings):
+    @patch(
+        "opentelemetry_instrumentation_django_outbox_pattern.instrumentors.publisher_instrument.get_span",
+        side_effect=CustomFakeException("fake high level exception"),
+    )
+    @patch("sys.getsizeof", return_value=1)
+    def test_should_log_exception_if_it_was_raised_to_instrument(self, mock_payload_size, mock_get_span):
         # Act
-        settings.OTEL_PYTHON_DJANGO_STOMP_INSTRUMENT = False
-        DjangoOutboxPatternInstrumentor().instrument()
-        publisher = build_publisher(f"test-publisher-{uuid4()}")
-        publisher.send(
-            queue=self.test_queue_name, body={"fake": "body"}, headers={"correlation-id": self.correlation_id}
-        )
+        with self.assertLogs(logger=publisher_logger, level="WARNING") as publisher_log:
+            published_create = Published.objects.create(
+                destination=self.test_queue_name,
+                body=self.fake_payload_body,
+            )
 
         # Assert
-        # getting message without create a consumer span
-        received_message = get_latest_message_from_destination_using_test_listener(self.test_queue_name)
-        received_message_headers, received_message_body = received_message
         finished_spans = self.get_finished_spans()
-        assert len(finished_spans) == 0
-        assert json.loads(received_message_body) == self.fake_payload_body
-        assert received_message_headers.get("traceparent") is None
+        self.assertEqual(len(finished_spans), 0)
+        self.assertNotIn("traceparent", published_create.headers)
+        self.assertEqual(len(publisher_log.output), 1)
+        self.assertIn("An exception occurred in the on_get_message_headers wrap.", publisher_log.output[0])
+        self.assertIn("CustomFakeException: fake high level exception", publisher_log.output[0])
+
+
+class TestPublisherToBrokerInstrument(PublisherInstrumentBase):
+
+    def expected_span_attributes(self, mock_payload_size):
+        host, port = django_settings.DJANGO_OUTBOX_PATTERN["DEFAULT_STOMP_HOST_AND_PORTS"][0]
+        return {
+            SpanAttributes.MESSAGING_DESTINATION: format_publisher_destination(self.test_queue_name),
+            SpanAttributes.MESSAGING_CONVERSATION_ID: self.correlation_id,
+            SpanAttributes.MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES: mock_payload_size("x"),
+            SpanAttributes.MESSAGING_OPERATION: "publish",
+            SpanAttributes.NET_PEER_NAME: host,
+            SpanAttributes.NET_PEER_PORT: port,
+            SpanAttributes.MESSAGING_SYSTEM: "rabbitmq",
+        }
+
+    @patch("sys.getsizeof", return_value=1)
+    def test_should_publish_with_trace_traceparent_header_and_create_publish_span(self, mock_payload_size):
+        # Act save
+        published_create = Published.objects.create(
+            destination=self.test_queue_name,
+            body=self.fake_payload_body,
+        )
+
+        # Assert save
+        self.assertIn("traceparent", published_create.headers)
+
+        # Arrange send
+        Command.running = PropertyMock(side_effect=[True, False])
+        out = StringIO()
+        self.memory_exporter.clear()
+        self.reset_trace_globals()
+
+        # Act send
+        call_command("publish", stdout=out)
+        self.assertIn("Message published with body", out.getvalue())
+
+        # Assert send
+        finished_spans = self.get_finished_spans()
+        publish_span = finished_spans.by_name(f"send {format_publisher_destination(self.test_queue_name)}")
+        self.assertEqual(dict(publish_span.attributes), self.expected_span_attributes(mock_payload_size))
+
+
+class TestPublisherToBrokerRaisesInstrument(PublisherInstrumentBase):
+    @staticmethod
+    def hook_callback(span, body, headers):
+        assert headers.get("traceparent", None) == get_traceparent_from_span(span)
+        raise CustomFakeException("fake exception")
+
+    def expected_span_attributes(self, mock_payload_size):
+        host, port = django_settings.DJANGO_OUTBOX_PATTERN["DEFAULT_STOMP_HOST_AND_PORTS"][0]
+        return {
+            SpanAttributes.MESSAGING_DESTINATION: format_publisher_destination(self.test_queue_name),
+            SpanAttributes.MESSAGING_CONVERSATION_ID: self.correlation_id,
+            SpanAttributes.MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES: mock_payload_size("x"),
+            SpanAttributes.MESSAGING_OPERATION: "publish",
+            SpanAttributes.NET_PEER_NAME: host,
+            SpanAttributes.NET_PEER_PORT: port,
+            SpanAttributes.MESSAGING_SYSTEM: "rabbitmq",
+        }
+
+    @patch("sys.getsizeof", return_value=1)
+    def test_should_publish_with_trace_traceparent_when_callback_hook_fails(self, mock_payload_size):
+        # Act save
+        published_create = Published.objects.create(
+            destination=self.test_queue_name,
+            body=self.fake_payload_body,
+        )
+
+        # Assert save
+        self.assertIn("traceparent", published_create.headers)
+
+        # Arrange send
+        Command.running = PropertyMock(side_effect=[True, False])
+        out = StringIO()
+        self.memory_exporter.clear()
+        self.reset_trace_globals()
+
+        # Act send
+        with self.assertLogs(logger=publisher_logger, level="WARNING") as publisher_log:
+            call_command("publish", stdout=out)
+        self.assertIn("Message published with body", out.getvalue())
+
+        # Assert send
+        finished_spans = self.get_finished_spans()
+        publish_span = finished_spans.by_name(f"send {format_publisher_destination(self.test_queue_name)}")
+        self.assertEqual(dict(publish_span.attributes), self.expected_span_attributes(mock_payload_size))
+        self.assertEqual(len(publisher_log.output), 2)  # one for save and one for publish
+        self.assertIn("An exception occurred in the callback hook.", publisher_log.output[1])
+        self.assertIn('CustomFakeException("fake exception")', publisher_log.output[1])
+
+    @patch(
+        "opentelemetry_instrumentation_django_outbox_pattern.instrumentors.publisher_instrument.format_publisher_destination",
+        side_effect=CustomFakeException("fake high level exception"),
+    )
+    @patch("sys.getsizeof", return_value=1)
+    def test_should_publish_when_exception_occurs_on_instrument(
+        self, mock_payload_size, mock_format_publisher_destination
+    ):
+        # Act save
+        published_create = Published.objects.create(
+            destination=self.test_queue_name,
+            body=self.fake_payload_body,
+        )
+
+        # Assert save
+        self.assertIn("traceparent", published_create.headers)
+
+        # Arrange send
+        self.memory_exporter.clear()
+        self.reset_trace_globals()
+        Command.running = PropertyMock(side_effect=[True, False])
+        out = StringIO()
+
+        # Act send
+        with self.assertLogs(logger=publisher_logger, level="WARNING") as publisher_log:
+            call_command("publish", stdout=out)
+        self.assertIn("Message published with body", out.getvalue())
+
+        # Assert
+        finished_spans = self.get_finished_spans()
+        self.assertEqual(len(finished_spans), 1)  # one for save
+        self.assertEqual(len(publisher_log.output), 2)  # one for save and one for publish
+        self.assertIn("An exception occurred in the on_send_message wrap.", publisher_log.output[0])
+        self.assertIn("CustomFakeException: fake high level exception", publisher_log.output[0])

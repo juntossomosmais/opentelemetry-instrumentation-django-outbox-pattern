@@ -1,3 +1,4 @@
+from django.test import TestCase
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace import export
@@ -6,7 +7,7 @@ from opentelemetry.trace import format_span_id
 from opentelemetry.trace import format_trace_id
 from opentelemetry.util._once import Once
 
-from opentelemetry_instrumentation_django_stomp import DjangoStompInstrumentor
+from opentelemetry_instrumentation_django_outbox_pattern import DjangoOutboxPatternInstrumentor
 
 
 def get_traceparent_from_span(span):
@@ -39,26 +40,29 @@ class FinishedTestSpans(list):
         return None
 
 
-class TestBase:
-    """Base test class with setup_method and teardown_method for telemetry parameters"""
+class TestBase(TestCase):
+    """Base test class with setup and teardown for telemetry parameters"""
 
     tracer_provider = None
     memory_exporter = None
     consumer_hook = None
     publisher_hook = None
 
-    def setup_class(self):
+    def setUp(self):
+        super().setUp()
         result = self.create_tracer_provider()
         self.tracer_provider, self.memory_exporter = result
         trace.set_tracer_provider(self.tracer_provider)
-        DjangoStompInstrumentor().instrument(publisher_hook=self.publisher_hook, consumer_hook=self.consumer_hook)
+        DjangoOutboxPatternInstrumentor().instrument(
+            tracer_provider=self.tracer_provider,
+            publisher_hook=self.publisher_hook,
+            consumer_hook=self.consumer_hook,
+        )
 
-    def teardown_method(self):
+    def tearDown(self):
         self.memory_exporter.clear()
-
-    def teardown_class(self):
         self.reset_trace_globals()
-        DjangoStompInstrumentor().uninstrument()
+        DjangoOutboxPatternInstrumentor().uninstrument()
 
     def get_finished_spans(self):
         return FinishedTestSpans(self, self.memory_exporter.get_finished_spans())

@@ -1,92 +1,139 @@
-from unittest import mock
+from unittest.mock import MagicMock
+from unittest.mock import patch
 
-import pytest
-
+from django.test import TestCase
+from django.test import override_settings
 from opentelemetry.semconv.trace import SpanAttributes
 from opentelemetry.trace import SpanKind
 
+from opentelemetry_instrumentation_django_outbox_pattern.utils.span import enrich_span
+from opentelemetry_instrumentation_django_outbox_pattern.utils.span import enrich_span_with_host_data
+from opentelemetry_instrumentation_django_outbox_pattern.utils.span import get_messaging_ack_nack_span
 from opentelemetry_instrumentation_django_outbox_pattern.utils.span import get_span
 
 
-class TestSpan:
-    @pytest.mark.parametrize(
-        "test_params",
-        [
-            {
-                "fake_broker_host": "fake_host",
-                "fake_broker_port": "fake_port",
-                "fake_broker_system": "fake_system",
-                "operation": "fake_operation",
-                "destination": "fake_destination",
-                "headers": {"correlation-id": "fake_value"},
-                "body": {"fake_key": "fake_value"},
-                "span_kind": SpanKind.INTERNAL,
-                "span_name": "fake_span_name",
-            },
-            {
-                "fake_broker_host": "fake_host",
-                "fake_broker_port": "fake_port",
-                "operation": "fake_operation",
-                "destination": "fake_destination",
-                "headers": {"correlation-id": "fake_value"},
-                "body": {"fake_key": "fake_value"},
-                "span_kind": SpanKind.INTERNAL,
-                "span_name": "fake_span_name",
-            },
-            {
-                "fake_broker_host": "fake_host",
-                "fake_broker_port": "fake_port",
-                "fake_broker_system": None,
-                "operation": "fake_operation",
-                "destination": "fake_destination",
-                "headers": {"correlation-id": "fake_value"},
-                "body": {"fake_key": "fake_value"},
-                "span_kind": SpanKind.CONSUMER,
-                "span_name": "fake_span_name",
-            },
-        ],
+class SpanUtilsTestCase(TestCase):
+    @override_settings(
+        DJANGO_OUTBOX_PATTERN={
+            "DEFAULT_STOMP_HOST_AND_PORTS": [("test-host", 61613)],
+        },
+        STOMP_SYSTEM="test-system",
     )
-    def test_should_enrich_span_with_host_data_based_in_env_configurations_and_parameters(
-        self, test_params, settings, mock_payload_size
-    ):
-        # Arrange
-        fake_broker_host = test_params["fake_broker_host"]
-        fake_broker_port = test_params["fake_broker_port"]
-        fake_broker_system = test_params.get("fake_broker_system", False)
-        
-        settings.DJANGO_OUTBOX_PATTERN["DEFAULT_STOMP_HOST_AND_PORTS"] = [(fake_broker_host,fake_broker_port)]
-        if fake_broker_system:
-            settings.STOMP_SYSTEM = fake_broker_system
+    def test_enrich_span_with_host_data(self):
+        """Test that enrich_span_with_host_data adds the correct attributes to the span"""
+        mock_span = MagicMock()
 
-        expected_span_attributes_host = {
-            SpanAttributes.NET_PEER_NAME: fake_broker_host,
-            SpanAttributes.NET_PEER_PORT: fake_broker_port,
-            SpanAttributes.MESSAGING_SYSTEM: fake_broker_system or "rabbitmq",
-        }
+        enrich_span_with_host_data(mock_span)
 
-        expected_span_attributes_message = {
-            SpanAttributes.MESSAGING_DESTINATION: test_params["destination"],
-            SpanAttributes.MESSAGING_OPERATION: test_params["operation"],
-            SpanAttributes.MESSAGING_CONVERSATION_ID: test_params["headers"].get("correlation-id"),
-            SpanAttributes.MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES: mock_payload_size,
-        }
-        mocked_span = mock.MagicMock()
-
-        mocked_tracer = mock.MagicMock()
-        mocked_tracer.start_span.return_value = mocked_span
-
-        # Act
-        get_span(
-            tracer=mocked_tracer,
-            operation=test_params["operation"],
-            destination=test_params["destination"],
-            headers=test_params["headers"],
-            body=test_params["body"],
-            span_name=test_params["span_name"],
-            span_kind=test_params["span_kind"],
+        mock_span.set_attributes.assert_called_once_with(
+            {
+                SpanAttributes.NET_PEER_NAME: "test-host",
+                SpanAttributes.NET_PEER_PORT: 61613,
+                SpanAttributes.MESSAGING_SYSTEM: "test-system",
+            }
         )
 
-        # Assert
-        assert mocked_span.is_recording.call_count == 1
-        mocked_span.set_attributes.assert_any_call(expected_span_attributes_host)
-        mocked_span.set_attributes.assert_any_call(expected_span_attributes_message)
+    @patch("opentelemetry_instrumentation_django_outbox_pattern.utils.span.enrich_span_with_host_data")
+    def test_enrich_span_with_operation(self, mock_enrich_span_with_host_data):
+        """Test that enrich_span adds the correct attributes to the span when operation is provided"""
+        mock_span = MagicMock()
+        operation = "test-operation"
+        destination = "test-destination"
+        headers = {"dop-correlation-id": "test-correlation-id"}
+        body = {"test": "body"}
+
+        enrich_span(mock_span, operation, destination, headers, body)
+
+        # Check that the correct attributes were set
+        attributes = mock_span.set_attributes.call_args[0][0]
+        self.assertEqual(attributes[SpanAttributes.MESSAGING_DESTINATION], destination)
+        self.assertEqual(attributes[SpanAttributes.MESSAGING_CONVERSATION_ID], "test-correlation-id")
+        self.assertEqual(attributes[SpanAttributes.MESSAGING_OPERATION], operation)
+        self.assertIn(SpanAttributes.MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES, attributes)
+
+        # Check that enrich_span_with_host_data was called
+        mock_enrich_span_with_host_data.assert_called_once_with(mock_span)
+
+    @patch("opentelemetry_instrumentation_django_outbox_pattern.utils.span.enrich_span_with_host_data")
+    def test_enrich_span_without_operation(self, mock_enrich_span_with_host_data):
+        """Test that enrich_span adds the correct attributes to the span when operation is not provided"""
+        mock_span = MagicMock()
+        operation = None
+        destination = "test-destination"
+        headers = {"correlation-id": "test-correlation-id"}
+        body = {"test": "body"}
+
+        enrich_span(mock_span, operation, destination, headers, body)
+
+        # Check that the correct attributes were set
+        attributes = mock_span.set_attributes.call_args[0][0]
+        self.assertEqual(attributes[SpanAttributes.MESSAGING_DESTINATION], destination)
+        self.assertEqual(attributes[SpanAttributes.MESSAGING_CONVERSATION_ID], "test-correlation-id")
+        self.assertNotIn(SpanAttributes.MESSAGING_OPERATION, attributes)
+        self.assertIn(SpanAttributes.MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES, attributes)
+
+        # Check that enrich_span_with_host_data was called
+        mock_enrich_span_with_host_data.assert_called_once_with(mock_span)
+
+    @patch("opentelemetry_instrumentation_django_outbox_pattern.utils.span.enrich_span")
+    def test_get_span(self, mock_enrich_span):
+        """Test that get_span creates a span and calls enrich_span"""
+        mock_tracer = MagicMock()
+        mock_span = MagicMock()
+        mock_tracer.start_span.return_value = mock_span
+        mock_span.is_recording.return_value = True
+
+        destination = "test-destination"
+        span_kind = SpanKind.PRODUCER
+        headers = {"test": "headers"}
+        body = {"test": "body"}
+        span_name = "test-span"
+        operation = "test-operation"
+
+        result = get_span(mock_tracer, destination, span_kind, headers, body, span_name, operation)
+
+        # Check that the span was created correctly
+        mock_tracer.start_span.assert_called_once_with(name=span_name, kind=span_kind)
+
+        # Check that enrich_span was called with the correct arguments
+        mock_enrich_span.assert_called_once_with(
+            span=mock_span,
+            operation=operation,
+            destination=destination,
+            headers=headers,
+            body=body,
+        )
+
+        # Check that the correct span was returned
+        self.assertEqual(result, mock_span)
+
+    @patch("opentelemetry_instrumentation_django_outbox_pattern.utils.span.enrich_span_with_host_data")
+    def test_get_messaging_ack_nack_span(self, mock_enrich_span_with_host_data):
+        """Test that get_messaging_ack_nack_span creates a span and sets the correct attributes"""
+        mock_tracer = MagicMock()
+        mock_span = MagicMock()
+        mock_tracer.start_span.return_value = mock_span
+        mock_span.is_recording.return_value = True
+
+        span_kind = SpanKind.PRODUCER
+        span_name = "test-span"
+        destination = "test-destination"
+        operation = "test-operation"
+        headers = {"dop-correlation-id": "test-correlation-id"}
+
+        result = get_messaging_ack_nack_span(mock_tracer, span_kind, span_name, destination, operation, headers)
+
+        # Check that the span was created correctly
+        mock_tracer.start_span.assert_called_once_with(name=span_name, kind=span_kind)
+
+        # Check that the correct attributes were set
+        attributes = mock_span.set_attributes.call_args[0][0]
+        self.assertEqual(attributes[SpanAttributes.MESSAGING_OPERATION], operation)
+        self.assertEqual(attributes[SpanAttributes.MESSAGING_DESTINATION], destination)
+        self.assertEqual(attributes[SpanAttributes.MESSAGING_CONVERSATION_ID], "test-correlation-id")
+
+        # Check that enrich_span_with_host_data was called
+        mock_enrich_span_with_host_data.assert_called_once_with(mock_span)
+
+        # Check that the correct span was returned
+        self.assertEqual(result, mock_span)

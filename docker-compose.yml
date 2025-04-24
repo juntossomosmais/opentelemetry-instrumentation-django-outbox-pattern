@@ -27,7 +27,7 @@ services:
     networks:
       - instrumentation
 
-  broker-rabbitmq:
+  rabbitmq:
     image: rabbitmq:4-management
     ports:
       - 61613:61613

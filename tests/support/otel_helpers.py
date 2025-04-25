@@ -1,13 +1,40 @@
-from django.test import TestCase
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace import export
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import format_span_id
 from opentelemetry.trace import format_trace_id
-from opentelemetry.util._once import Once
 
 from opentelemetry_instrumentation_django_outbox_pattern import DjangoOutboxPatternInstrumentor
+
+_tracer_provider = None
+_memory_exporter = None
+
+
+def create_global_tracer_provider():
+    """Create and register the global tracer provider once"""
+    global _tracer_provider, _memory_exporter
+
+    if _tracer_provider is None or _memory_exporter is None:
+        _tracer_provider = TracerProvider()
+        _memory_exporter = InMemorySpanExporter()
+        span_processor = export.SimpleSpanProcessor(_memory_exporter)
+        _tracer_provider.add_span_processor(span_processor)
+        trace.set_tracer_provider(_tracer_provider)
+
+    return _tracer_provider, _memory_exporter
+
+
+def instrument_app(publisher_hook=None, consumer_hook=None):
+    """Instrument the app with the given hooks"""
+    tracer_provider, memory_exporter = create_global_tracer_provider()
+
+    # Re-instrument with potentially new hooks
+    DjangoOutboxPatternInstrumentor().instrument(
+        tracer_provider=tracer_provider, publisher_hook=publisher_hook, consumer_hook=consumer_hook
+    )
+
+    return tracer_provider, memory_exporter
 
 
 def get_traceparent_from_span(span):
@@ -38,56 +65,3 @@ class FinishedTestSpans(list):
                 return span
         self.test.fail(f"Did not find span with attrs {key}={value}")
         return None
-
-
-class TestBase(TestCase):
-    """Base test class with setup and teardown for telemetry parameters"""
-
-    tracer_provider = None
-    memory_exporter = None
-    consumer_hook = None
-    publisher_hook = None
-
-    def setUp(self):
-        super().setUp()
-        result = self.create_tracer_provider()
-        self.tracer_provider, self.memory_exporter = result
-        trace.set_tracer_provider(self.tracer_provider)
-        DjangoOutboxPatternInstrumentor().instrument(
-            tracer_provider=self.tracer_provider,
-            publisher_hook=self.publisher_hook,
-            consumer_hook=self.consumer_hook,
-        )
-
-    def tearDown(self):
-        self.memory_exporter.clear()
-        self.reset_trace_globals()
-        DjangoOutboxPatternInstrumentor().uninstrument()
-
-    def get_finished_spans(self):
-        return FinishedTestSpans(self, self.memory_exporter.get_finished_spans())
-
-    @staticmethod
-    def reset_trace_globals() -> None:
-        """WARNING: only use this for tests."""
-        trace._TRACER_PROVIDER_SET_ONCE = Once()
-        trace._TRACER_PROVIDER = None
-        trace._PROXY_TRACER_PROVIDER = trace.ProxyTracerProvider()
-
-    @staticmethod
-    def create_tracer_provider(**kwargs):
-        """Helper to create a configured tracer provider.
-        Creates and configures a `TracerProvider` with a
-        `SimpleSpanProcessor` and a `InMemorySpanExporter`.
-        All the parameters passed are forwarded to the TracerProvider
-        constructor.
-        Returns:
-            A list with the tracer provider in the first element and the
-            in-memory span exporter in the second.
-        """
-        tracer_provider = TracerProvider(**kwargs)
-        memory_exporter = InMemorySpanExporter()
-        span_processor = export.SimpleSpanProcessor(memory_exporter)
-        tracer_provider.add_span_processor(span_processor)
-
-        return tracer_provider, memory_exporter

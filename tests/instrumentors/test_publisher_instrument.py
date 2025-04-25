@@ -15,19 +15,17 @@ from opentelemetry_instrumentation_django_outbox_pattern.instrumentors.publisher
 )
 from opentelemetry_instrumentation_django_outbox_pattern.utils.formatters import format_publisher_destination
 from tests.support.helpers_tests import CustomFakeException
-from tests.support.otel_helpers import TestBase
+from tests.support.helpers_tests import TestBase
 from tests.support.otel_helpers import get_traceparent_from_span
+from tests.support.otel_helpers import instrument_app
 
 
 class PublisherInstrumentBase(TestBase):
-    hook_callback = None
     test_queue_name = None
     correlation_id = None
     fake_payload_body = None
-    publisher = None
 
     def setUp(self):
-        self.publisher_hook = self.hook_callback
         self.test_queue_name = f"/exchange/test-exchange/test-publisher-queue-{uuid4()}"
         self.correlation_id = f"{uuid4()}"
         local_threading.request_id = self.correlation_id
@@ -48,7 +46,7 @@ class PublisherInstrumentBase(TestBase):
 
 class TestPublisherSaveInstrument(PublisherInstrumentBase):
     @staticmethod
-    def hook_callback(span, body, headers):
+    def publisher_hook(span, body, headers):
         assert headers.get("traceparent", None) == get_traceparent_from_span(span)
 
     @patch("sys.getsizeof", return_value=1)
@@ -68,7 +66,7 @@ class TestPublisherSaveInstrument(PublisherInstrumentBase):
 
 class TestPublisherSaveInstrumentRaises(PublisherInstrumentBase):
     @staticmethod
-    def hook_callback(span, body, headers):
+    def publisher_hook(span, body, headers):
         assert headers.get("traceparent", None) == get_traceparent_from_span(span)
         raise CustomFakeException("fake exception")
 
@@ -140,8 +138,7 @@ class TestPublisherToBrokerInstrument(PublisherInstrumentBase):
         # Arrange send
         Command.running = PropertyMock(side_effect=[True, False])
         out = StringIO()
-        self.memory_exporter.clear()
-        self.reset_trace_globals()
+        self.reset_trace()
 
         # Act send
         call_command("publish", stdout=out)
@@ -155,7 +152,7 @@ class TestPublisherToBrokerInstrument(PublisherInstrumentBase):
 
 class TestPublisherToBrokerRaisesInstrument(PublisherInstrumentBase):
     @staticmethod
-    def hook_callback(span, body, headers):
+    def publisher_hook(span, body, headers):
         assert headers.get("traceparent", None) == get_traceparent_from_span(span)
         raise CustomFakeException("fake exception")
 
@@ -185,8 +182,7 @@ class TestPublisherToBrokerRaisesInstrument(PublisherInstrumentBase):
         # Arrange send
         Command.running = PropertyMock(side_effect=[True, False])
         out = StringIO()
-        self.memory_exporter.clear()
-        self.reset_trace_globals()
+        self.reset_trace()
 
         # Act send
         with self.assertLogs(logger=publisher_logger, level="WARNING") as publisher_log:
@@ -197,9 +193,9 @@ class TestPublisherToBrokerRaisesInstrument(PublisherInstrumentBase):
         finished_spans = self.get_finished_spans()
         publish_span = finished_spans.by_name(f"send {format_publisher_destination(self.test_queue_name)}")
         self.assertEqual(dict(publish_span.attributes), self.expected_span_attributes(mock_payload_size))
-        self.assertEqual(len(publisher_log.output), 2)  # one for save and one for publish
-        self.assertIn("An exception occurred in the callback hook.", publisher_log.output[1])
-        self.assertIn('CustomFakeException("fake exception")', publisher_log.output[1])
+        self.assertEqual(len(publisher_log.output), 1)
+        self.assertIn("An exception occurred in the callback hook.", publisher_log.output[0])
+        self.assertIn('CustomFakeException("fake exception")', publisher_log.output[0])
 
     @patch(
         "opentelemetry_instrumentation_django_outbox_pattern.instrumentors.publisher_instrument.format_publisher_destination",
@@ -219,8 +215,7 @@ class TestPublisherToBrokerRaisesInstrument(PublisherInstrumentBase):
         self.assertIn("traceparent", published_create.headers)
 
         # Arrange send
-        self.memory_exporter.clear()
-        self.reset_trace_globals()
+        self.reset_trace()
         Command.running = PropertyMock(side_effect=[True, False])
         out = StringIO()
 
@@ -231,7 +226,7 @@ class TestPublisherToBrokerRaisesInstrument(PublisherInstrumentBase):
 
         # Assert
         finished_spans = self.get_finished_spans()
-        self.assertEqual(len(finished_spans), 1)  # one for save
-        self.assertEqual(len(publisher_log.output), 2)  # one for save and one for publish
+        self.assertEqual(len(finished_spans), 0)
+        self.assertEqual(len(publisher_log.output), 1)
         self.assertIn("An exception occurred in the on_send_message wrap.", publisher_log.output[0])
         self.assertIn("CustomFakeException: fake high level exception", publisher_log.output[0])

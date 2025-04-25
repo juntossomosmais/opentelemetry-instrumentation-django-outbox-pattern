@@ -4,7 +4,6 @@ import logging
 import wrapt
 
 from django.core.serializers.json import DjangoJSONEncoder
-from django_outbox_pattern import headers as outbox_headers_module
 from django_outbox_pattern.producers import Producer
 from opentelemetry import context
 from opentelemetry import propagate
@@ -13,6 +12,8 @@ from opentelemetry.instrumentation.utils import unwrap
 from opentelemetry.sdk.trace import Tracer
 from opentelemetry.semconv.trace import MessagingOperationValues
 from opentelemetry.trace import SpanKind
+
+from django_outbox_pattern import headers as outbox_headers_module
 
 from ..utils.django_outbox_pattern_getter import DjangoOutboxPatternGetter
 from ..utils.formatters import format_publisher_destination
@@ -94,10 +95,10 @@ class PublisherInstrument:
                 return message_headers
 
         wrapt.wrap_function_wrapper(Producer, "_send_with_retry", on_send_message)
-        wrapt.wrap_function_wrapper(outbox_headers_module, "generate_headers", on_get_message_headers)
+        wrapt.wrap_function_wrapper(outbox_headers_module, "get_message_headers", on_get_message_headers)
 
     @staticmethod
     def uninstrument():
         """Uninstrument publisher functions from django-outbox-pattern"""
         unwrap(Producer, "_send_with_retry")
-        unwrap(outbox_headers_module, "generate_headers")
+        unwrap(outbox_headers_module, "get_message_headers")

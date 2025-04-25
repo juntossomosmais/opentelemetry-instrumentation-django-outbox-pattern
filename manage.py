@@ -2,8 +2,13 @@
 import os
 import sys
 
+from tests.support.otel_helpers import instrument_app
+
 if __name__ == "__main__":
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tests.test_settings")
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tests.settings")
+
+    instrument_app()
+
     try:
         from django.core.management import execute_from_command_line
     except ImportError as exc:

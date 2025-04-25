@@ -28,3 +28,15 @@ class TestDjangoOutboxPatternInstrumentor(TestCase):
         self.assertIsNone(result)
         mock_consumer_instrument.assert_not_called()
         mock_publisher_instrument.assert_not_called()
+
+    def test_uninstrument_functions_calls(self):
+        # Arrange
+        instrumentor = DjangoOutboxPatternInstrumentor()
+        tracer_provider = MagicMock()
+
+        # Act & Assert
+        instrumentor.instrument(tracer_provider=tracer_provider)
+        self.assertIsNotNone(getattr(instrumentor, "__opentelemetry_tracer_provider", None))
+
+        instrumentor._uninstrument(tracer_provider=tracer_provider)
+        self.assertIsNone(getattr(instrumentor, "__opentelemetry_tracer_provider", None))

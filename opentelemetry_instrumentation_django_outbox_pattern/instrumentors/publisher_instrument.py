@@ -4,6 +4,7 @@ import logging
 import wrapt
 
 from django.core.serializers.json import DjangoJSONEncoder
+from django_outbox_pattern import headers as outbox_headers_module
 from django_outbox_pattern.producers import Producer
 from opentelemetry import context
 from opentelemetry import propagate
@@ -12,8 +13,6 @@ from opentelemetry.instrumentation.utils import unwrap
 from opentelemetry.sdk.trace import Tracer
 from opentelemetry.semconv.trace import MessagingOperationValues
 from opentelemetry.trace import SpanKind
-
-from django_outbox_pattern import headers as outbox_headers_module
 
 from ..utils.django_outbox_pattern_getter import DjangoOutboxPatternGetter
 from ..utils.formatters import format_publisher_destination
@@ -34,7 +33,7 @@ class PublisherInstrument:
             try:
                 destination = format_publisher_destination(destination=kwargs.get("destination"))
                 message_headers = kwargs.get("headers", {})
-                body = kwargs.get("body", {})
+                body = json.loads(kwargs.get("body", {}))
 
                 ctx = propagate.extract(message_headers, getter=_django_outbox_pattern_getter)
                 if not ctx:

@@ -7,33 +7,41 @@ from opentelemetry.trace import format_trace_id
 
 from opentelemetry_instrumentation_django_outbox_pattern import DjangoOutboxPatternInstrumentor
 
-_tracer_provider = None
-_memory_exporter = None
+tracer_provider = None
+memory_exporter = None
 
 
-def create_global_tracer_provider():
-    """Create and register the global tracer provider once"""
-    global _tracer_provider, _memory_exporter
-
-    if _tracer_provider is None or _memory_exporter is None:
-        _tracer_provider = TracerProvider()
-        _memory_exporter = InMemorySpanExporter()
-        span_processor = export.SimpleSpanProcessor(_memory_exporter)
-        _tracer_provider.add_span_processor(span_processor)
-        trace.set_tracer_provider(_tracer_provider)
-
-    return _tracer_provider, _memory_exporter
+class CustomFakeException(Exception):
+    pass
 
 
-def instrument_app(publisher_hook=None, consumer_hook=None):
+def publisher_hook(span, body, headers):
+    """Hook to be called when a message is published"""
+    assert headers.get("traceparent", None) == get_traceparent_from_span(span)
+    if body.get("raise_publisher_hook_exception", False):
+        raise CustomFakeException("fake exception")
+
+
+def consumer_hook(span, body, headers):
+    """Hook to be called when a message is consumed"""
+
+
+def instrument_app():
     """Instrument the app with the given hooks"""
-    tracer_provider, memory_exporter = create_global_tracer_provider()
+    global tracer_provider, memory_exporter
 
-    # Re-instrument with potentially new hooks
-    DjangoOutboxPatternInstrumentor().instrument(
-        tracer_provider=tracer_provider, publisher_hook=publisher_hook, consumer_hook=consumer_hook
-    )
+    if tracer_provider is None or memory_exporter is None:
+        tracer_provider = TracerProvider()
+        memory_exporter = InMemorySpanExporter()
+        span_processor = export.SimpleSpanProcessor(memory_exporter)
+        tracer_provider.add_span_processor(span_processor)
+        trace.set_tracer_provider(tracer_provider)
 
+        DjangoOutboxPatternInstrumentor().instrument(
+            tracer_provider=tracer_provider,
+            publisher_hook=publisher_hook,
+            consumer_hook=consumer_hook,
+        )
     return tracer_provider, memory_exporter
 
 

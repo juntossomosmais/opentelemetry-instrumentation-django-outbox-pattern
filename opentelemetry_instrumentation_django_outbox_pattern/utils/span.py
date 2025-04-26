@@ -32,8 +32,8 @@ def enrich_span(
     """Helper function add SpanAttributes"""
     conversation_id = str(headers.get("dop-correlation-id") or headers.get("correlation-id"))
     attributes = {
-        SpanAttributes.MESSAGING_DESTINATION: destination,
-        SpanAttributes.MESSAGING_CONVERSATION_ID: conversation_id,
+        SpanAttributes.MESSAGING_DESTINATION_NAME: destination,
+        SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID: conversation_id,
         SpanAttributes.MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES: sys.getsizeof(json.dumps(body)),
     }
     if operation is not None:
@@ -78,8 +78,8 @@ def get_messaging_ack_nack_span(
     if span.is_recording():
         attributes = {
             SpanAttributes.MESSAGING_OPERATION: operation,
-            SpanAttributes.MESSAGING_DESTINATION: destination,
-            SpanAttributes.MESSAGING_CONVERSATION_ID: conversation_id,
+            SpanAttributes.MESSAGING_DESTINATION_NAME: destination,
+            SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID: conversation_id,
         }
         span.set_attributes(attributes)
         enrich_span_with_host_data(span)

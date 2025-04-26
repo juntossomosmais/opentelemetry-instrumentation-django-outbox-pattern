@@ -35,8 +35,8 @@ class PublisherInstrumentBase(TestBase):
 
         host, port = django_settings.DJANGO_OUTBOX_PATTERN["DEFAULT_STOMP_HOST_AND_PORTS"][0]
         return {
-            SpanAttributes.MESSAGING_DESTINATION: self.test_queue_name,
-            SpanAttributes.MESSAGING_CONVERSATION_ID: self.correlation_id,
+            SpanAttributes.MESSAGING_DESTINATION_NAME: self.test_queue_name,
+            SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID: self.correlation_id,
             SpanAttributes.MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES: mock_payload_size("x"),
             SpanAttributes.NET_PEER_NAME: host,
             SpanAttributes.NET_PEER_PORT: port,
@@ -113,8 +113,8 @@ class TestPublisherToBrokerInstrument(PublisherInstrumentBase):
 
         host, port = django_settings.DJANGO_OUTBOX_PATTERN["DEFAULT_STOMP_HOST_AND_PORTS"][0]
         return {
-            SpanAttributes.MESSAGING_DESTINATION: format_publisher_destination(self.test_queue_name),
-            SpanAttributes.MESSAGING_CONVERSATION_ID: self.correlation_id,
+            SpanAttributes.MESSAGING_DESTINATION_NAME: format_publisher_destination(self.test_queue_name),
+            SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID: self.correlation_id,
             SpanAttributes.MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES: mock_payload_size("x"),
             SpanAttributes.MESSAGING_OPERATION: "publish",
             SpanAttributes.NET_PEER_NAME: host,
@@ -154,8 +154,8 @@ class TestPublisherToBrokerRaisesInstrument(PublisherInstrumentBase):
 
         host, port = django_settings.DJANGO_OUTBOX_PATTERN["DEFAULT_STOMP_HOST_AND_PORTS"][0]
         return {
-            SpanAttributes.MESSAGING_DESTINATION: format_publisher_destination(self.test_queue_name),
-            SpanAttributes.MESSAGING_CONVERSATION_ID: self.correlation_id,
+            SpanAttributes.MESSAGING_DESTINATION_NAME: format_publisher_destination(self.test_queue_name),
+            SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID: self.correlation_id,
             SpanAttributes.MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES: mock_payload_size("x"),
             SpanAttributes.MESSAGING_OPERATION: "publish",
             SpanAttributes.NET_PEER_NAME: host,

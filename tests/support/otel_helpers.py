@@ -24,6 +24,7 @@ def publisher_hook(span, body, headers):
 
 def consumer_hook(span, body, headers):
     """Hook to be called when a message is consumed"""
+    pass
 
 
 def instrument_app():

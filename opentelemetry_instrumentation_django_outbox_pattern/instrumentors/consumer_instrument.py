@@ -4,17 +4,17 @@ import typing
 
 import wrapt
 
-from django.utils.module_loading import import_string
-from django_outbox_pattern import factories
-from django_outbox_pattern.management.commands import subscribe
+from django_outbox_pattern.consumers import Consumer
 from opentelemetry import context
 from opentelemetry import propagate
 from opentelemetry import trace
+from opentelemetry.instrumentation.utils import unwrap
 from opentelemetry.sdk.trace import Tracer
 from opentelemetry.semconv.trace import MessagingOperationValues
 from opentelemetry.trace import SpanKind
 from opentelemetry.trace import Status
 from opentelemetry.trace import StatusCode
+from stomp.connect import StompConnection12
 
 from ..utils.django_outbox_pattern_getter import DjangoOutboxPatternGetter
 from ..utils.formatters import format_consumer_destination
@@ -33,53 +33,6 @@ class ConsumerInstrument:
     @staticmethod
     def instrument(tracer: Tracer, callback_hook: CallbackHookT = None):
         """Instrumentor function to create span and instrument consumer"""
-
-        def wrapped_import_string(dotted_path):
-            callback_function = import_string(dotted_path)
-
-            def instrument_callback(payload):
-                try:
-                    headers = payload.headers
-                    body = payload.body
-                    destination = format_consumer_destination(headers)
-                    ctx = propagate.extract(headers, getter=_django_outbox_pattern_getter)
-                    if not ctx:
-                        ctx = context.get_current()
-                    token = context.attach(ctx)
-
-                    span = get_span(
-                        tracer=tracer,
-                        destination=destination,
-                        span_kind=SpanKind.CONSUMER,
-                        headers=headers,
-                        body=body,
-                        span_name=f"process {destination}",
-                        operation=str(MessagingOperationValues.RECEIVE.value),
-                    )
-
-                    # Store the span and context in thread-local storage to get this in ack or nack functions
-                    _thread_local.span = span
-                    _thread_local.span_context = trace.set_span_in_context(span)
-                    _thread_local.headers = headers
-                    _thread_local.destination = destination
-                except Exception as unmapped_exception:
-                    _logger.warning(
-                        "An exception occurred in the instrument_callback wrap.", exc_info=unmapped_exception
-                    )
-                    return callback_function(payload)
-
-                try:
-                    with trace.use_span(span):
-                        if callback_hook:
-                            try:
-                                callback_hook(span, body, headers)
-                            except Exception as hook_exception:
-                                _logger.warning("An exception occurred in the callback hook.", exc_info=hook_exception)
-                        return callback_function(payload)
-                finally:
-                    context.detach(token)
-
-            return instrument_callback
 
         def common_ack_or_nack_span(span_event_name: str, span_status: Status, wrapped_function: typing.Callable):
             token = None
@@ -155,19 +108,52 @@ class ConsumerInstrument:
                 if token:
                     context.detach(token)
 
-        def wrapped_factories_import_string(dotted_path):
-            broker_connection_class = import_string(dotted_path)
+        def wrapped_message_handler(wrapped, instance, args, kwargs):
+            try:
+                body = args[0]
+                headers = args[1]
+                destination = format_consumer_destination(headers)
+                ctx = propagate.extract(headers, getter=_django_outbox_pattern_getter)
+                if not ctx:
+                    ctx = context.get_current()
+                token = context.attach(ctx)
 
-            wrapt.wrap_function_wrapper(broker_connection_class, "ack", wrapper_ack)
-            wrapt.wrap_function_wrapper(broker_connection_class, "nack", wrapper_nack)
-            return broker_connection_class
+                span = get_span(
+                    tracer=tracer,
+                    destination=destination,
+                    span_kind=SpanKind.CONSUMER,
+                    headers=headers,
+                    body=body,
+                    span_name=f"process {destination}",
+                    operation=str(MessagingOperationValues.RECEIVE.value),
+                )
 
-        wrapt.wrap_function_wrapper(subscribe, "_import_from_string", wrapped_import_string)
-        wrapt.wrap_function_wrapper(factories, "import_string", wrapped_import_string)
-        setattr(subscribe, "_import_from_string", wrapped_import_string)
-        setattr(factories, "import_string", wrapped_factories_import_string)
+                # Store the span and context in thread-local storage to get this in ack or nack functions
+                _thread_local.span = span
+                _thread_local.span_context = trace.set_span_in_context(span)
+                _thread_local.headers = headers
+                _thread_local.destination = destination
+            except Exception as unmapped_exception:
+                _logger.warning("An exception occurred in the instrument_callback wrap.", exc_info=unmapped_exception)
+                return wrapped(*args, **kwargs)
+
+            try:
+                with trace.use_span(span):
+                    if callback_hook:
+                        try:
+                            callback_hook(span, body, headers)
+                        except Exception as hook_exception:
+                            _logger.warning("An exception occurred in the callback hook.", exc_info=hook_exception)
+                    return wrapped(*args, **kwargs)
+            finally:
+                context.detach(token)
+
+        wrapt.wrap_function_wrapper(Consumer, "message_handler", wrapped_message_handler)
+        wrapt.wrap_function_wrapper(StompConnection12, "ack", wrapper_ack)
+        wrapt.wrap_function_wrapper(StompConnection12, "nack", wrapper_nack)
 
     @staticmethod
     def uninstrument():
-        setattr(subscribe, "_import_from_string", import_string)
-        setattr(factories, "import_string", import_string)
+        unwrap(Consumer, "message_handler")
+        unwrap(StompConnection12, "ack")
+        unwrap(StompConnection12, "nack")

@@ -46,8 +46,8 @@ class SpanUtilsTestCase(TestCase):
 
         # Check that the correct attributes were set
         attributes = mock_span.set_attributes.call_args[0][0]
-        self.assertEqual(attributes[SpanAttributes.MESSAGING_DESTINATION], destination)
-        self.assertEqual(attributes[SpanAttributes.MESSAGING_CONVERSATION_ID], "test-correlation-id")
+        self.assertEqual(attributes[SpanAttributes.MESSAGING_DESTINATION_NAME], destination)
+        self.assertEqual(attributes[SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID], "test-correlation-id")
         self.assertEqual(attributes[SpanAttributes.MESSAGING_OPERATION], operation)
         self.assertIn(SpanAttributes.MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES, attributes)
 
@@ -67,8 +67,8 @@ class SpanUtilsTestCase(TestCase):
 
         # Check that the correct attributes were set
         attributes = mock_span.set_attributes.call_args[0][0]
-        self.assertEqual(attributes[SpanAttributes.MESSAGING_DESTINATION], destination)
-        self.assertEqual(attributes[SpanAttributes.MESSAGING_CONVERSATION_ID], "test-correlation-id")
+        self.assertEqual(attributes[SpanAttributes.MESSAGING_DESTINATION_NAME], destination)
+        self.assertEqual(attributes[SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID], "test-correlation-id")
         self.assertNotIn(SpanAttributes.MESSAGING_OPERATION, attributes)
         self.assertIn(SpanAttributes.MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES, attributes)
 
@@ -129,8 +129,8 @@ class SpanUtilsTestCase(TestCase):
         # Check that the correct attributes were set
         attributes = mock_span.set_attributes.call_args[0][0]
         self.assertEqual(attributes[SpanAttributes.MESSAGING_OPERATION], operation)
-        self.assertEqual(attributes[SpanAttributes.MESSAGING_DESTINATION], destination)
-        self.assertEqual(attributes[SpanAttributes.MESSAGING_CONVERSATION_ID], "test-correlation-id")
+        self.assertEqual(attributes[SpanAttributes.MESSAGING_DESTINATION_NAME], destination)
+        self.assertEqual(attributes[SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID], "test-correlation-id")
 
         # Check that enrich_span_with_host_data was called
         mock_enrich_span_with_host_data.assert_called_once_with(mock_span)

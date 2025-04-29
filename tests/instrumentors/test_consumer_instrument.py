@@ -28,7 +28,7 @@ class ConsumerInstrumentBase(TestBase, TransactionTestCase):
     fake_payload_body = None
 
     def setUp(self):
-        self.test_queue_name = f"/topic/consumer.v1"
+        self.test_queue_name = "/topic/consumer.v1"
         self.correlation_id = f"{uuid4()}"
         local_threading.request_id = self.correlation_id
         self.fake_payload_body = {"message": "mock message"}

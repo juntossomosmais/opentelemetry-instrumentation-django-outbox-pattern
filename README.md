@@ -10,7 +10,7 @@
 
 This library will help you to use opentelemetry traces and metrics on [Django outbox pattern](https://github.com/juntossomosmais/django-outbox-pattern) usage library.
 
-![Django outbox pattern instrumentation](docs/example.gif?raw=true)
+![Django outbox pattern instrumentation](docs/all_trace_example.png?raw=true)
 
 
 ####  Installation
@@ -49,7 +49,7 @@ def consumer_hook(span: Span, body: typing.Dict, headers: typing.Dict):
 
 provider = TracerProvider()
 trace.set_tracer_provider(provider)
-trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
+provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
 
 def main():
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "application.settings")
@@ -82,20 +82,44 @@ The `DjangoOutboxPatternInstrumentor` can receive three optional parameters:
 
 :warning: The hook function will not raise an exception when an error occurs inside hook function, only a warning log is generated
 
-#### PUBLISHER example
+### Span Generated
 
-With the django-outbox-pattern, we can publish a message to a broker using `publish` management command and the instrumentator can include a span with telemetry data in this function utilization.
+#### save published {destination}
 
-```bash
-    python manage.py publish
+With the django-outbox-pattern, when you create on `Published` objects one object is saved and this saved is instrumentalized.
+
+```python
+from django_outbox_pattern.models import Published
+
+Published.objects.create(
+    destination='destination',
+    body={
+        "random": "body"
+    },
+)
+    
 ```
 
-The publisher span had "PUBLISHER" name.
+The outbox save span had `save published {destination}` name.
 
-![publisher example](docs/publisher_example.png?raw=true)
+![save example](docs/save_trace.png?raw=true)
 
-#### CONSUMER example
-With the django-outbox-pattern, we create a simple consumer using subscribe management command and the instrumentator can include a span with telemetry data in this function utilization.
+#### publish {destination}
+
+After save the object in `Published` model the `publish` command will get all pending messages and publish there to broker
+
+```bash
+python manage.py publish
+```
+
+The outbox publish span had `publish {destination}` name.
+
+![publisher example](docs/send_trace.png?raw=true)
+
+#### Consumer
+
+Using the django-outbox-pattern, we create a simple consumer using subscribe management command, using this command
+we can see the consumer spans.
 
 ```bash
    python manage.py subscribe 'dotted.path.to.callback` 'destination' 'queue_name'
@@ -103,12 +127,12 @@ With the django-outbox-pattern, we create a simple consumer using subscribe mana
 
 Consumer spans can generate up to three types:
 
-- CONSUMER
-![consumer example](docs/consumer_example.png?raw=true)
-- ACK
-![ack example](docs/ack_example.png?raw=true)
-- NACK
-![nack example](docs/nack_example.png?raw=true)
+- process {destination}
+![process trace](docs/process_trace.png?raw=true)
+- ack {destination}
+![ack trace](docs/ack_trace.png?raw=true)
+- nack {destination}
+![nack trace](docs/nack_trace.png?raw=true)
 
 #### Supress django-outbox-pattern traces and metrics
 When the flag `OTEL_PYTHON_DJANGO_OUTBOX_PATTERN_INSTRUMENT` has `False` value traces and metrics will not be generated.

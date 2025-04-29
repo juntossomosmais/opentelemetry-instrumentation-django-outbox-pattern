@@ -11,7 +11,6 @@ from request_id_django_log import local_threading
 from stomp.listener import TestListener
 
 from tests.support.helpers_tests import TestBase
-from tests.support.otel_helpers import get_traceparent_from_span
 
 
 def get_callback(raise_except=False):

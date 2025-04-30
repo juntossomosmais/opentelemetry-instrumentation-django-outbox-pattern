@@ -122,7 +122,7 @@ Using the django-outbox-pattern, we create a simple consumer using subscribe man
 we can see the consumer spans.
 
 ```bash
-   python manage.py subscribe 'dotted.path.to.callback` 'destination' 'queue_name'
+   python manage.py subscribe 'dotted.path.to.callback' 'destination' 'queue_name'
 ```
 
 Consumer spans can generate up to three types:

@@ -100,7 +100,7 @@ class ConsumerInstrument:
                     span.add_event("message.ack")
                     span.set_status(Status(StatusCode.OK))
                     span.end()
-                return common_ack_or_nack_span("message.nack", Status(StatusCode.OK), wrapped(*args, **kwargs))
+                return common_ack_or_nack_span("message.ack", Status(StatusCode.OK), wrapped(*args, **kwargs))
             except Exception as exception:
                 _logger.warning("An exception occurred while trying to set ack span.", exc_info=exception)
                 return common_ack_or_nack_span("message.ack", Status(StatusCode.OK), wrapped(*args, **kwargs))

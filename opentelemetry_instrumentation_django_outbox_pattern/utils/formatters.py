@@ -3,7 +3,7 @@ import typing
 
 def format_consumer_destination(headers: typing.Dict) -> str:
     """
-    Helper function to forma the consumer destination according to opentelemetry specification.
+    Helper function to format the consumer destination according to opentelemetry specification.
     https://opentelemetry.io/docs/specs/semconv/messaging/rabbitmq/
 
     The specified format is:

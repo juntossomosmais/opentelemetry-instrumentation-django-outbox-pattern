@@ -1,6 +1,7 @@
 from unittest.mock import patch
 from uuid import uuid4
 
+from django.core.cache import cache
 from django.test import TransactionTestCase
 from django_outbox_pattern.factories import factory_consumer
 from django_outbox_pattern.headers import get_message_headers
@@ -32,7 +33,7 @@ class ConsumerInstrumentBase(TestBase, TransactionTestCase):
         self.correlation_id = f"{uuid4()}"
         local_threading.request_id = self.correlation_id
         self.fake_payload_body = {"message": "mock message"}
-
+        cache.set("remove_old_messages_django_outbox_pattern_consumer", True)
         super().setUp()
 
     def expected_span_attributes(self, mock_payload_size, custom_attributes_override: dict | None = None):

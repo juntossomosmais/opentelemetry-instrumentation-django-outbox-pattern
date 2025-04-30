@@ -35,78 +35,31 @@ class ConsumerInstrument:
         """Instrumentor function to create span and instrument consumer"""
 
         def common_ack_or_nack_span(span_event_name: str, span_status: Status, wrapped_function: typing.Callable):
-            token = None
             try:
-                span = getattr(_thread_local, "span", None)
-                span_ctx = getattr(_thread_local, "span_context", None)
+                process_span = trace.get_current_span()
+                if process_span and process_span.is_recording():
+                    process_span.add_event(span_event_name)
+                    process_span.set_status(span_status)
 
-                if span and span.is_recording():
-                    token = context.attach(span_ctx)
-                    span.add_event(span_event_name)
-                    span.set_status(span_status)
-                    span.end()
+                ack_nack_span = get_messaging_ack_nack_span(
+                    tracer=tracer,
+                    operation="ack" if span_event_name == "message.ack" else "nack",
+                    process_span=process_span,
+                )
+                if ack_nack_span and ack_nack_span.is_recording():
+                    ack_nack_span.add_event(span_event_name)
+                    ack_nack_span.set_status(span_status)
+                    ack_nack_span.end()
+                return wrapped_function
             except Exception as unmapped_exception:
                 _logger.warning("An exception occurred while trying to set ack/nack span.", exc_info=unmapped_exception)
                 return wrapped_function
-            finally:
-                if token:
-                    context.detach(token)
 
         def wrapper_nack(wrapped, instance, args, kwargs):
-            token = None
-            try:
-                ctx = getattr(_thread_local, "span_context", None)
-                destination = getattr(_thread_local, "destination", None)
-                headers = getattr(_thread_local, "headers", {})
-                token = context.attach(ctx)
-
-                span = get_messaging_ack_nack_span(
-                    tracer=tracer,
-                    span_kind=SpanKind.CONSUMER,
-                    span_name=f"nack {destination}",
-                    operation="nack",
-                    destination=destination,
-                    headers=headers,
-                )
-                if span and span.is_recording():
-                    span.add_event("message.nack")
-                    span.set_status(Status(StatusCode.ERROR))
-                    span.end()
-                return common_ack_or_nack_span("message.nack", Status(StatusCode.ERROR), wrapped(*args, **kwargs))
-            except Exception as unmapped_exception:
-                _logger.warning("An exception occurred while trying to set nack span.", exc_info=unmapped_exception)
-                return common_ack_or_nack_span("message.nack", Status(StatusCode.ERROR), wrapped(*args, **kwargs))
-            finally:
-                if token:
-                    context.detach(token)
+            return common_ack_or_nack_span("message.nack", Status(StatusCode.ERROR), wrapped(*args, **kwargs))
 
         def wrapper_ack(wrapped, instance, args, kwargs):
-            token = None
-            try:
-                ctx = getattr(_thread_local, "span_context", None)
-                destination = getattr(_thread_local, "destination", None)
-                headers = getattr(_thread_local, "headers", {})
-                token = context.attach(ctx)
-
-                span = get_messaging_ack_nack_span(
-                    tracer=tracer,
-                    span_kind=SpanKind.CONSUMER,
-                    span_name=f"ack {destination}",
-                    operation="ack",
-                    destination=destination,
-                    headers=headers,
-                )
-                if span and span.is_recording():
-                    span.add_event("message.ack")
-                    span.set_status(Status(StatusCode.OK))
-                    span.end()
-                return common_ack_or_nack_span("message.ack", Status(StatusCode.OK), wrapped(*args, **kwargs))
-            except Exception as exception:
-                _logger.warning("An exception occurred while trying to set ack span.", exc_info=exception)
-                return common_ack_or_nack_span("message.ack", Status(StatusCode.OK), wrapped(*args, **kwargs))
-            finally:
-                if token:
-                    context.detach(token)
+            return common_ack_or_nack_span("message.ack", Status(StatusCode.OK), wrapped(*args, **kwargs))
 
         def wrapped_message_handler(wrapped, instance, args, kwargs):
             try:
@@ -128,17 +81,12 @@ class ConsumerInstrument:
                     operation=str(MessagingOperationValues.RECEIVE.value),
                 )
 
-                # Store the span and context in thread-local storage to get this in ack or nack functions
-                _thread_local.span = span
-                _thread_local.span_context = trace.set_span_in_context(span)
-                _thread_local.headers = headers
-                _thread_local.destination = destination
             except Exception as unmapped_exception:
                 _logger.warning("An exception occurred in the instrument_callback wrap.", exc_info=unmapped_exception)
                 return wrapped(*args, **kwargs)
 
             try:
-                with trace.use_span(span):
+                with trace.use_span(span, end_on_exit=True):
                     if callback_hook:
                         try:
                             callback_hook(span, body, headers)

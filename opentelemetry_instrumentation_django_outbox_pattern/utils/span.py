@@ -66,15 +66,15 @@ def get_span(
 
 def get_messaging_ack_nack_span(
     tracer: Tracer,
-    span_kind: SpanKind,
-    span_name: str,
-    destination: str,
-    operation: str,
-    headers: typing.Dict,
+    operation: str,  # ack or nack
+    process_span: Span,
 ) -> Span:
     """Helper function to mount span and call function to set SpanAttributes"""
-    span = tracer.start_span(name=span_name, kind=span_kind)
-    conversation_id = str(headers.get("dop-correlation-id") or headers.get("correlation-id"))
+    destination = process_span._attributes.get(SpanAttributes.MESSAGING_DESTINATION_NAME, "UNKNOWN")
+    conversation_id = process_span._attributes.get(SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID, "UNKNOWN")
+    span_name = f"ack {destination}" if operation == "ack" else f"nack {destination}"
+
+    span = tracer.start_span(name=span_name, kind=SpanKind.CONSUMER)
     if span.is_recording():
         attributes = {
             SpanAttributes.MESSAGING_OPERATION: operation,

@@ -110,30 +110,37 @@ class SpanUtilsTestCase(TestCase):
     @patch("opentelemetry_instrumentation_django_outbox_pattern.utils.span.enrich_span_with_host_data")
     def test_get_messaging_ack_nack_span(self, mock_enrich_span_with_host_data):
         """Test that get_messaging_ack_nack_span creates a span and sets the correct attributes"""
-        mock_tracer = MagicMock()
-        mock_span = MagicMock()
-        mock_tracer.start_span.return_value = mock_span
-        mock_span.is_recording.return_value = True
+        for operation in ["ack", "nack"]:
+            mock_tracer = MagicMock()
+            mock_span = MagicMock()
+            mock_tracer.start_span.return_value = mock_span
+            mock_span.is_recording.return_value = True
 
-        span_kind = SpanKind.PRODUCER
-        span_name = "test-span"
-        destination = "test-destination"
-        operation = "test-operation"
-        headers = {"dop-correlation-id": "test-correlation-id"}
+            destination = "test-destination"
 
-        result = get_messaging_ack_nack_span(mock_tracer, span_kind, span_name, destination, operation, headers)
+            mock_process_span = MagicMock()
+            mock_process_span._attributes = {
+                SpanAttributes.MESSAGING_DESTINATION_NAME: destination,
+                SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID: "test-correlation-id",
+            }
 
-        # Check that the span was created correctly
-        mock_tracer.start_span.assert_called_once_with(name=span_name, kind=span_kind)
+            operation = operation
+            span_name = f"{operation} test-destination"
+            result = get_messaging_ack_nack_span(mock_tracer, operation, mock_process_span)
 
-        # Check that the correct attributes were set
-        attributes = mock_span.set_attributes.call_args[0][0]
-        self.assertEqual(attributes[SpanAttributes.MESSAGING_OPERATION], operation)
-        self.assertEqual(attributes[SpanAttributes.MESSAGING_DESTINATION_NAME], destination)
-        self.assertEqual(attributes[SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID], "test-correlation-id")
+            # Check that the span was created correctly
+            mock_tracer.start_span.assert_called_once_with(name=span_name, kind=SpanKind.CONSUMER)
 
-        # Check that enrich_span_with_host_data was called
-        mock_enrich_span_with_host_data.assert_called_once_with(mock_span)
+            # Check that the correct attributes were set
+            attributes = mock_span.set_attributes.call_args[0][0]
+            self.assertEqual(attributes[SpanAttributes.MESSAGING_OPERATION], operation)
+            self.assertEqual(attributes[SpanAttributes.MESSAGING_DESTINATION_NAME], destination)
+            self.assertEqual(attributes[SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID], "test-correlation-id")
 
-        # Check that the correct span was returned
-        self.assertEqual(result, mock_span)
+            # Check that enrich_span_with_host_data was called
+            mock_enrich_span_with_host_data.assert_called_once_with(mock_span)
+
+            self.assertEqual(result, mock_span)
+
+            # reset mock objects for the next iteration
+            mock_enrich_span_with_host_data.reset_mock()

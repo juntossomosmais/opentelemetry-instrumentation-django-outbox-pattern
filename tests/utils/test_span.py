@@ -124,7 +124,6 @@ class SpanUtilsTestCase(TestCase):
                 SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID: "test-correlation-id",
             }
 
-            operation = operation
             span_name = f"{operation} test-destination"
             result = get_messaging_ack_nack_span(mock_tracer, operation, mock_process_span)
 

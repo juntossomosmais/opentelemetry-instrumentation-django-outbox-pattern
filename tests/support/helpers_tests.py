@@ -17,8 +17,7 @@ class TestBase(TestCase):
         self.tracer_provider, self.memory_exporter = instrument_app()
 
     def tearDown(self):
-        self.force_clean_memory_exporter()
-        self.reset_trace_globals()
+        self.reset_trace()
 
     def get_finished_spans(self):
         return FinishedTestSpans(self, self.memory_exporter.get_finished_spans())

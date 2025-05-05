@@ -31,8 +31,9 @@ In project manage.py you can include the example code below
 *****************************************
 CONSUMER
 -----
-With the django-outbox-pattern we create a simple consumer using pubsub subscribe command and the instrumentor
-can include a span with telemetry data in this function utilization.
+With the django-outbox-pattern, we create a simple consumer using the pubsub subscribe command. The `consumer_hook`
+provided to the `DjangoOutboxPatternInstrumentor` is used to enrich or override spans with telemetry data for
+consumer operations. This allows you to customize the telemetry data for each consumed message.
 
 .. code-block:: python
    python manage.py subscribe 'dotted.path.to.callback` 'destination' 'queue_name'

@@ -104,7 +104,7 @@ The outbox save span had `save published {destination}` name.
 
 ![save example](docs/save_trace.png?raw=true)
 
-#### publish {destination}
+#### send {destination}
 
 After save the object in `Published` model the `publish` command will get all pending messages and publish there to broker
 

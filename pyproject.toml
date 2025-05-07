@@ -15,7 +15,7 @@ keywords=["django-outbox-pattern", "outbox-pattern", "django", "opentelemetry", 
 [tool.poetry.dependencies]
 python = "^3.10"
 Django = "*"
-django-outbox-pattern = "^3.0.1"
+django-outbox-pattern = "^3.0.2"
 opentelemetry-sdk = "*"
 opentelemetry-api = "*"
 opentelemetry-instrumentation = "*"

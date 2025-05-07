@@ -1,166 +1,226 @@
 import json
-import logging
 
+from unittest.mock import MagicMock
+from unittest.mock import patch
 from uuid import uuid4
 
-from django.conf import settings
-from django_stomp.builder import build_listener
-from django_stomp.builder import build_publisher
-from django_stomp.services.consumer import StompFrame
+from django.core.cache import cache
+from django.test import TransactionTestCase
+from django_outbox_pattern.factories import factory_consumer
+from django_outbox_pattern.headers import get_message_headers
+from django_outbox_pattern.models import Published
+from django_outbox_pattern.models import Received
 from opentelemetry.semconv.trace import MessagingOperationValues
 from opentelemetry.semconv.trace import SpanAttributes
+from request_id_django_log import local_threading
+from stomp.listener import TestListener
 
-from tests.support.helpers_tests import CustomFakeException
-from tests.support.helpers_tests import get_latest_message_from_destination_using_test_listener
-from tests.support.otel_helpers import TestBase
+from opentelemetry_instrumentation_django_outbox_pattern.instrumentors.consumer_instrument import (
+    _logger as consumer_logger,
+)
+from tests.support.helpers_tests import TestBase
 
 
-class TestConsumerBase(TestBase):
-    hook_callback = None
-    consumer_id = None
-    queue_consumer_name = None
+def get_callback(raise_except=False):
+    def callback(payload):
+        if raise_except:
+            raise KeyError("Test exception")
+        payload.save()
+
+    return callback
+
+
+class ConsumerInstrumentBase(TestBase, TransactionTestCase):
+    test_queue_name = None
     correlation_id = None
     fake_payload_body = None
-    fake_payload_headers = None
-    span_host_attributes = None
-    listener = None
-    fake_frame = None
 
-    def setup_class(self):
-        self.consumer_hook = self.hook_callback
-        super().setup_class(self)
-
-    def setup_method(self):
-        # Arrange
-        self.consumer_id = f"some-destination-{uuid4()}"
-        self.queue_consumer_name = f"/queue/test-publisher-queue-{uuid4()}"
+    def setUp(self):
+        self.test_queue_name = "/topic/consumer.v1"
         self.correlation_id = f"{uuid4()}"
-        self.fake_payload_body = {"fake": "body"}
-        self.fake_payload_headers = {
-            "tshoot-destination": self.queue_consumer_name,
-            "correlation-id": self.correlation_id,
-            "message-id": str(uuid4()),
-        }
-        self.span_host_attributes = {
-            SpanAttributes.NET_PEER_NAME: settings.STOMP_SERVER_HOST,
-            SpanAttributes.NET_PEER_PORT: settings.STOMP_SERVER_PORT,
-            SpanAttributes.MESSAGING_SYSTEM: "rabbitmq",
-        }
-        self.listener = build_listener(self.consumer_id, should_process_msg_on_background=True)
-        self.fake_frame = StompFrame(
-            cmd="FAKE_CMD", headers=self.fake_payload_headers, body=json.dumps(self.fake_payload_body)
-        )
+        local_threading.request_id = self.correlation_id
+        self.fake_payload_body = {"message": "mock message"}
+        cache.set("remove_old_messages_django_outbox_pattern_consumer", True)
+        super().setUp()
 
-    def expected_span_attributes(self, mock_payload_size):
+    def expected_span_attributes(self, mock_payload_size, custom_attributes_override: dict | None = None):
+        from django.conf import settings as django_settings
+
+        custom_attributes_override = custom_attributes_override if custom_attributes_override else {}
+
+        host, port = django_settings.DJANGO_OUTBOX_PATTERN["DEFAULT_STOMP_HOST_AND_PORTS"][0]
         return {
-            SpanAttributes.MESSAGING_DESTINATION: self.queue_consumer_name,
-            SpanAttributes.MESSAGING_OPERATION: str(MessagingOperationValues.RECEIVE.value),
-            SpanAttributes.MESSAGING_CONVERSATION_ID: self.correlation_id,
-            SpanAttributes.MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES: mock_payload_size,
-            **self.span_host_attributes,
+            SpanAttributes.MESSAGING_DESTINATION_NAME: self.test_queue_name,
+            SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID: self.correlation_id,
+            SpanAttributes.MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES: mock_payload_size("x"),
+            SpanAttributes.NET_PEER_NAME: host,
+            SpanAttributes.NET_PEER_PORT: port,
+            SpanAttributes.MESSAGING_SYSTEM: "rabbitmq",
+            **custom_attributes_override,
         }
 
 
-class TestConsumerInstrument(TestConsumerBase):
-    @staticmethod
-    def hook_callback(span, body, headers):
-        assert span.name == "CONSUMER"
+class TestConsumerInstrument(ConsumerInstrumentBase):
 
-    def test_should_create_child_span_consumer_when_traceparent_header_exists_in_on_message_payload(
-        self, mock_payload_size
-    ):
+    def setUp(self):
+        super().setUp()
+        self.consumer = factory_consumer()
+        self.consumer.set_listener("test_listener", TestListener(print_to_log=True))
+        self.listener = self.consumer.get_listener("test_listener")
+
+    @patch("sys.getsizeof", return_value=1)
+    def test_should_consumer_create_span_with_ack(self, mock_payload_size):
         # Arrange
-        publisher = build_publisher(f"test-publisher-{uuid4()}")
-        publisher.send(queue=self.queue_consumer_name, body=self.fake_payload_body, headers=self.fake_payload_headers)
+        headers = get_message_headers(
+            Published(
+                destination=self.test_queue_name,
+                body=self.fake_payload_body,
+            )
+        )
+        callback = get_callback()
+        self.consumer.start(callback, self.test_queue_name)
+        self.consumer.connection.send(
+            destination=self.test_queue_name,
+            body='{"message": "mock message"}',
+            headers=headers,
+        )
+        self.listener.wait_for_message()
+        self.consumer.stop()
 
-        received_message = get_latest_message_from_destination_using_test_listener(self.queue_consumer_name)
-        received_message_headers, received_message_body = received_message
+        # Assert Consumer
+        finished_spans = self.get_finished_spans()
 
-        fake_frame_with_trace_parent_header = StompFrame(
-            cmd="FAKE_CMD", headers=received_message_headers, body=json.dumps(received_message_body)
+        # Check publisher span
+        publisher_span = finished_spans.by_name(f"save published {self.test_queue_name}")
+        self.assertEqual(dict(publisher_span.attributes), self.expected_span_attributes(mock_payload_size))
+
+        # Check consumer span
+        process = finished_spans.by_name("process topic:consumer.v1")
+        self.assertEqual(
+            dict(process.attributes),
+            self.expected_span_attributes(
+                mock_payload_size,
+                {
+                    SpanAttributes.MESSAGING_OPERATION: str(MessagingOperationValues.RECEIVE.value),
+                    SpanAttributes.MESSAGING_DESTINATION_NAME: "topic:consumer.v1",
+                },
+            ),
         )
 
-        common_span_attributes = {
-            SpanAttributes.MESSAGING_DESTINATION: self.queue_consumer_name,
-            SpanAttributes.MESSAGING_CONVERSATION_ID: self.correlation_id,
-            SpanAttributes.MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES: mock_payload_size,
-            **self.span_host_attributes,
-        }
+        # Check that the consumer span has the same trace as the publisher span
+        self.assertEqual(process.context.trace_id, publisher_span.context.trace_id)
 
-        expected_consumer_span_attributes = {
-            SpanAttributes.MESSAGING_OPERATION: str(MessagingOperationValues.RECEIVE.value),
-            **common_span_attributes,
-        }
+        ack_span = finished_spans.by_name("ack topic:consumer.v1")
+        ack_expected_attributes = self.expected_span_attributes(
+            mock_payload_size,
+            {
+                SpanAttributes.MESSAGING_OPERATION: "ack",
+                SpanAttributes.MESSAGING_DESTINATION_NAME: "topic:consumer.v1",
+            },
+        )
+        del ack_expected_attributes["messaging.message.payload_size_bytes"]
+        self.assertEqual(dict(ack_span.attributes), ack_expected_attributes)
 
-        # Act
-        self.listener.on_message(fake_frame_with_trace_parent_header)
-        self.listener.shutdown_worker_pool()
+    @patch("sys.getsizeof", return_value=1)
+    def test_should_consumer_create_span_with_nack(self, mock_payload_size):
+        # Arrange
+        callback = get_callback(raise_except=True)
+        headers = get_message_headers(
+            Published(
+                destination=self.test_queue_name,
+                body=self.fake_payload_body,
+            )
+        )
+        self.consumer.start(callback, self.test_queue_name)
+        self.consumer.connection.send(
+            destination=self.test_queue_name,
+            body='{"message": "mock message"}',
+            headers=headers,
+        )
+        self.listener.wait_for_message()
+        self.consumer.stop()
 
-        # Assert
+        # Assert Consumer
         finished_spans = self.get_finished_spans()
-        finished_consumer_span = finished_spans.by_name("CONSUMER")
-        finished_publisher_span = finished_spans.by_name("PUBLISHER")
 
-        assert len(finished_spans) == 2
-        assert dict(finished_consumer_span.attributes) == expected_consumer_span_attributes
-        assert dict(finished_publisher_span.attributes) == common_span_attributes
-        # finished_consumer_span is a child of finished_publisher_span
-        assert finished_consumer_span.parent.span_id == finished_publisher_span.context.span_id
-        assert finished_consumer_span.parent.trace_id == finished_publisher_span.context.trace_id
-        assert json.loads(received_message_body) == self.fake_payload_body
+        # Check publisher span
+        publisher_span = finished_spans.by_name(f"save published {self.test_queue_name}")
+        self.assertEqual(dict(publisher_span.attributes), self.expected_span_attributes(mock_payload_size))
 
-    def test_should_create_consumer_span_in_on_message_function(self, mock_payload_size):
-        # Act
-        self.listener.on_message(self.fake_frame)
-        self.listener.shutdown_worker_pool()
+        # Check consumer span
+        process = finished_spans.by_name("process topic:consumer.v1")
+        self.assertEqual(
+            dict(process.attributes),
+            self.expected_span_attributes(
+                mock_payload_size,
+                {
+                    SpanAttributes.MESSAGING_OPERATION: str(MessagingOperationValues.RECEIVE.value),
+                    SpanAttributes.MESSAGING_DESTINATION_NAME: "topic:consumer.v1",
+                },
+            ),
+        )
 
-        # Assert
-        finished_consumer_span = self.get_finished_spans().by_name("CONSUMER")
-        assert dict(finished_consumer_span.attributes) == self.expected_span_attributes(mock_payload_size)
+        # Check that the consumer span has the same trace as the publisher span
+        self.assertEqual(process.context.trace_id, publisher_span.context.trace_id)
 
-    def test_should_create_ack_span_on_ack_listener_action(self, mocker):
+        nack_span = finished_spans.by_name("nack topic:consumer.v1")
+        nack_expected_attributes = self.expected_span_attributes(
+            mock_payload_size,
+            {
+                SpanAttributes.MESSAGING_OPERATION: "nack",
+                SpanAttributes.MESSAGING_DESTINATION_NAME: "topic:consumer.v1",
+            },
+        )
+        del nack_expected_attributes["messaging.message.payload_size_bytes"]
+        self.assertEqual(dict(nack_span.attributes), nack_expected_attributes)
+
+    def test_should_handle_exception_in_common_ack(self):
         # Arrange
-        mocker.patch(
-            "django_stomp.services.consumer.connect.StompConnection11.send_frame"
-        )  # to not raise StompConnectionException
+        self.consumer.connection.send_frame = MagicMock()
 
         # Act
-        self.listener._connection.ack(id="x", subscription=self.listener.__dict__["_subscription_id"])
-        ack_finished_span = self.get_finished_spans().by_name("ACK")
+        with self.assertLogs(logger=consumer_logger, level="WARNING") as log:
+            self.consumer.connection.ack("message_fake_id")
+            self.consumer.stop()
 
         # Assert
-        assert dict(ack_finished_span.attributes) == self.span_host_attributes
+        self.assertIn(
+            "An exception occurred while trying to set ack/nack span.",
+            log.output[0],
+        )
 
-    def test_should_create_nack_span_on_nack_listener_action(self, mocker):
+    def test_should_handle_exception_in_common_nack(self):
         # Arrange
-        mocker.patch(
-            "django_stomp.services.consumer.connect.StompConnection11.send_frame"
-        )  # to not raise StompConnectionException
+        self.consumer.connection.send_frame = MagicMock()
 
         # Act
-        self.listener._connection.nack(id="x", subscription=self.listener.__dict__["_subscription_id"])
-        nack_finished_span = self.get_finished_spans().by_name("NACK")
+        with self.assertLogs(logger=consumer_logger, level="WARNING") as log:
+            self.consumer.connection.nack("message_fake_id")
+            self.consumer.stop()
 
         # Assert
-        assert dict(nack_finished_span.attributes) == self.span_host_attributes
+        self.assertIn(
+            "An exception occurred while trying to set ack/nack span.",
+            log.output[0],
+        )
 
-
-class TestConsumerInstrumentHookRaises(TestConsumerBase):
-    @staticmethod
-    def hook_callback(span, body, headers):
-        assert span.name == "CONSUMER"
-        raise CustomFakeException("fake exception")
-
-    def test_should_log_exception_if_it_was_raised_inside_hook_function(self, mock_payload_size, caplog):
+    def test_should_handle_exception_in_on_message_error(self):
         # Arrange
-        caplog.set_level(logging.WARNING)
+        Received.objects.create(msg_id="message_fake_id")
+        self.consumer.connection.send_frame = MagicMock()
 
         # Act
-        self.listener.on_message(self.fake_frame)
-        self.listener.shutdown_worker_pool()
+        with self.assertLogs(logger=consumer_logger, level="WARNING") as log:
+            self.consumer.message_handler(
+                json.dumps(self.fake_payload_body),
+                {
+                    "message-id": "message_fake_id",
+                },
+            )
+            self.consumer.stop()
 
         # Assert
-        finished_consumer_span = self.get_finished_spans().by_name("CONSUMER")
-        assert dict(finished_consumer_span.attributes) == self.expected_span_attributes(mock_payload_size)
-        assert len(caplog.records) == 1
-        assert caplog.records[0].message == "fake exception"
+        self.assertIn(
+            "An exception occurred in the instrument_callback wrap.",
+            log.output[0],
+        )

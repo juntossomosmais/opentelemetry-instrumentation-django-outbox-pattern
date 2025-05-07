@@ -4,9 +4,45 @@ from opentelemetry.sdk.trace import export
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import format_span_id
 from opentelemetry.trace import format_trace_id
-from opentelemetry.util._once import Once
 
-from opentelemetry_instrumentation_django_stomp import DjangoStompInstrumentor
+from opentelemetry_instrumentation_django_outbox_pattern import DjangoOutboxPatternInstrumentor
+
+tracer_provider = None
+memory_exporter = None
+
+
+class CustomFakeException(Exception):
+    pass
+
+
+def publisher_hook(span, body, headers):
+    """Hook to be called when a message is published"""
+    assert headers.get("traceparent", None) == get_traceparent_from_span(span)
+    if body.get("raise_publisher_hook_exception", False):
+        raise CustomFakeException("fake exception")
+
+
+def consumer_hook(span, body, headers):
+    """Hook to be called when a message is consumed"""
+
+
+def instrument_app():
+    """Instrument the app with the given hooks"""
+    global tracer_provider, memory_exporter
+
+    if tracer_provider is None or memory_exporter is None:
+        tracer_provider = TracerProvider()
+        memory_exporter = InMemorySpanExporter()
+        span_processor = export.SimpleSpanProcessor(memory_exporter)
+        tracer_provider.add_span_processor(span_processor)
+        trace.set_tracer_provider(tracer_provider)
+
+        DjangoOutboxPatternInstrumentor().instrument(
+            tracer_provider=tracer_provider,
+            publisher_hook=publisher_hook,
+            consumer_hook=consumer_hook,
+        )
+    return tracer_provider, memory_exporter
 
 
 def get_traceparent_from_span(span):
@@ -37,53 +73,3 @@ class FinishedTestSpans(list):
                 return span
         self.test.fail(f"Did not find span with attrs {key}={value}")
         return None
-
-
-class TestBase:
-    """Base test class with setup_method and teardown_method for telemetry parameters"""
-
-    tracer_provider = None
-    memory_exporter = None
-    consumer_hook = None
-    publisher_hook = None
-
-    def setup_class(self):
-        result = self.create_tracer_provider()
-        self.tracer_provider, self.memory_exporter = result
-        trace.set_tracer_provider(self.tracer_provider)
-        DjangoStompInstrumentor().instrument(publisher_hook=self.publisher_hook, consumer_hook=self.consumer_hook)
-
-    def teardown_method(self):
-        self.memory_exporter.clear()
-
-    def teardown_class(self):
-        self.reset_trace_globals()
-        DjangoStompInstrumentor().uninstrument()
-
-    def get_finished_spans(self):
-        return FinishedTestSpans(self, self.memory_exporter.get_finished_spans())
-
-    @staticmethod
-    def reset_trace_globals() -> None:
-        """WARNING: only use this for tests."""
-        trace._TRACER_PROVIDER_SET_ONCE = Once()
-        trace._TRACER_PROVIDER = None
-        trace._PROXY_TRACER_PROVIDER = trace.ProxyTracerProvider()
-
-    @staticmethod
-    def create_tracer_provider(**kwargs):
-        """Helper to create a configured tracer provider.
-        Creates and configures a `TracerProvider` with a
-        `SimpleSpanProcessor` and a `InMemorySpanExporter`.
-        All the parameters passed are forwarded to the TracerProvider
-        constructor.
-        Returns:
-            A list with the tracer provider in the first element and the
-            in-memory span exporter in the second.
-        """
-        tracer_provider = TracerProvider(**kwargs)
-        memory_exporter = InMemorySpanExporter()
-        span_processor = export.SimpleSpanProcessor(memory_exporter)
-        tracer_provider.add_span_processor(span_processor)
-
-        return tracer_provider, memory_exporter

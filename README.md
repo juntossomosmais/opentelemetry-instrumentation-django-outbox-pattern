@@ -1,24 +1,24 @@
-# Opentelemetry auto instrumentation for django-stomp
+# Opentelemetry auto instrumentation for django outbox pattern library
 
-[//]: # ([![Build Status]&#40;https://dev.azure.com/juntos-somos-mais-loyalty/python/_apis/build/status/juntossomosmais.opentelemetry-instrumentation-django-stomp?branchName=main&#41;]&#40;https://dev.azure.com/juntos-somos-mais-loyalty/python/_build/latest?definitionId=272&branchName=main&#41;)
-[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=juntossomosmais_opentelemetry-instrumentation-django-stomp&metric=sqale_rating&token=80cebbac184a793f8d0be7a3bbe9792f47a6ef23)](https://sonarcloud.io/summary/new_code?id=juntossomosmais_opentelemetry-instrumentation-django-stomp)
-[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=juntossomosmais_opentelemetry-instrumentation-django-stomp&metric=coverage&token=80cebbac184a793f8d0be7a3bbe9792f47a6ef23)](https://sonarcloud.io/summary/new_code?id=juntossomosmais_opentelemetry-instrumentation-django-stomp)
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=juntossomosmais_opentelemetry-instrumentation-django-stomp&metric=alert_status&token=80cebbac184a793f8d0be7a3bbe9792f47a6ef23)](https://sonarcloud.io/summary/new_code?id=juntossomosmais_opentelemetry-instrumentation-django-stomp)
+[//]: # ([![Build Status]&#40;https://dev.azure.com/juntos-somos-mais-loyalty/python/_apis/build/status/juntossomosmais.opentelemetry-instrumentation-django-outbox-pattern?branchName=main&#41;]&#40;https://dev.azure.com/juntos-somos-mais-loyalty/python/_build/latest?definitionId=272&branchName=main&#41;)
+[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=juntossomosmais_opentelemetry-instrumentation-django-outbox-pattern&metric=sqale_rating&token=80cebbac184a793f8d0be7a3bbe9792f47a6ef23)](https://sonarcloud.io/summary/new_code?id=juntossomosmais_opentelemetry-instrumentation-django-outbox-pattern)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=juntossomosmais_opentelemetry-instrumentation-django-outbox-pattern&metric=coverage&token=80cebbac184a793f8d0be7a3bbe9792f47a6ef23)](https://sonarcloud.io/summary/new_code?id=juntossomosmais_opentelemetry-instrumentation-django-outbox-pattern)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=juntossomosmais_opentelemetry-instrumentation-django-outbox-pattern&metric=alert_status&token=80cebbac184a793f8d0be7a3bbe9792f47a6ef23)](https://sonarcloud.io/summary/new_code?id=juntossomosmais_opentelemetry-instrumentation-django-outbox-pattern)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/ambv/black)
-[![PyPI version](https://badge.fury.io/py/opentelemetry-instrumentation-django-stomp.svg)](https://badge.fury.io/py/opentelemetry-instrumentation-django-stomp)
-[![GitHub](https://img.shields.io/github/license/mashape/apistatus.svg)](https://github.com/juntossomosmais/opentelemetry-instrumentation-django-stomp/blob/main/LICENSE)
+[![PyPI version](https://badge.fury.io/py/opentelemetry-instrumentation-django-outbox-pattern.svg)](https://badge.fury.io/py/opentelemetry-instrumentation-django-outbox-pattern)
+[![GitHub](https://img.shields.io/github/license/mashape/apistatus.svg)](https://github.com/juntossomosmais/opentelemetry-instrumentation-django-outbox-pattern/blob/main/LICENSE)
 
-This library will help you to use opentelemetry traces and metrics on [Django STOMP](https://github.com/juntossomosmais/django-stomp) usage library.
+This library will help you to use opentelemetry traces and metrics on [Django outbox pattern](https://github.com/juntossomosmais/django-outbox-pattern) usage library.
 
-![Django stomp instrumentation](docs/example.gif?raw=true)
+![Django outbox pattern instrumentation](docs/all_trace_example.png?raw=true)
 
 
 ####  Installation
-pip install `opentelemetry-instrumentation-django-stomp`
+pip install `opentelemetry-instrumentation-django-outbox-pattern`
 
 #### How to use ?
 
-You can use the `DjangoStompInstrumentor().instrument()` for example in `manage.py` file.
+You can use the `DjangoOutboxPatternInstrumentor().instrument()` for example in `manage.py` file.
 
 
 ```python
@@ -28,7 +28,7 @@ import os
 import sys
 import typing
 
-from opentelemetry_instrumentation_django_stomp import DjangoStompInstrumentor
+from opentelemetry_instrumentation_django_outbox_pattern import DjangoOutboxPatternInstrumentor
 
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
@@ -49,11 +49,11 @@ def consumer_hook(span: Span, body: typing.Dict, headers: typing.Dict):
 
 provider = TracerProvider()
 trace.set_tracer_provider(provider)
-trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
+provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
 
 def main():
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "application.settings")
-    DjangoStompInstrumentor().instrument(
+    DjangoOutboxPatternInstrumentor().instrument(
         trace_provider=trace,
         publisher_hook=publisher_hook,
         consumer_hook=consumer_hook,
@@ -73,54 +73,70 @@ if __name__ == "__main__":
     main()
 ```
 
-The code above will create telemetry wrappers inside django-stomp code and creates automatic spans with broker data.
+The code above will create telemetry wrappers inside django-outbox-pattern code and creates automatic spans with broker data.
 
-The `DjangoStompInstrumentor` can receive three optional parameters:
+The `DjangoOutboxPatternInstrumentor` can receive three optional parameters:
 - **trace_provider**: The tracer provider to use in open-telemetry spans.
 - **publisher_hook**: The callable function on publisher action to call before the original function call, use this to override, enrich the span or get span information in the main project.
 - **consumer_hook**: The callable function on consumer action to call before the original function call, use this to override, enrich the span or get span information in the main project.
 
 :warning: The hook function will not raise an exception when an error occurs inside hook function, only a warning log is generated
 
-#### PUBLISHER example
+### Span Generated
 
-With the django-stomp, we can publish a message to a broker using `publisher.send` and the instrumentator
-can include a span with telemetry data in this function utilization.
+#### save published {destination}
+
+With the django-outbox-pattern, when you create on `Published` objects one object is saved and this saved is instrumentalized.
 
 ```python
-    from uuid import uuid4
-    from django_stomp.builder import build_publisher
-    publisher = build_publisher(f"publisher-unique-name-{uuid4()}")
-    publisher.send(
-        queue='/queue/a-destination',
-        body={"a": "random","body": "message"},
-    )
+from django_outbox_pattern.models import Published
+
+Published.objects.create(
+    destination='destination',
+    body={
+        "random": "body"
+    },
+)
+    
 ```
 
-The publisher span had "PUBLISHER" name.
+The outbox save span had `save published {destination}` name.
 
-![publisher example](docs/publisher_example.png?raw=true)
+![save example](docs/save_trace.png?raw=true)
 
-#### CONSUMER example
-With the django-stomp, we create a simple consumer using pubsub command and the instrumentator
-can include a span with telemetry data in this function utilization.
+#### send {destination}
+
+After save the object in `Published` model the `publish` command will get all pending messages and publish there to broker
 
 ```bash
-   python manage.py pubsub QUEUE_NAME callback_function_to_consume_message
+python manage.py publish
+```
+
+The outbox publish span had `publish {destination}` name.
+
+![publisher example](docs/send_trace.png?raw=true)
+
+#### Consumer
+
+Using the django-outbox-pattern, we create a simple consumer using subscribe management command, using this command
+we can see the consumer spans.
+
+```bash
+   python manage.py subscribe 'dotted.path.to.callback' 'destination' 'queue_name'
 ```
 
 Consumer spans can generate up to three types:
 
-- CONSUMER
-![consumer example](docs/consumer_example.png?raw=true)
-- ACK
-![ack example](docs/ack_example.png?raw=true)
-- NACK
-![nack example](docs/nack_example.png?raw=true)
+- process {destination}
+![process trace](docs/process_trace.png?raw=true)
+- ack {destination}
+![ack trace](docs/ack_trace.png?raw=true)
+- nack {destination}
+![nack trace](docs/nack_trace.png?raw=true)
 
-#### Supress django-stomp traces and metrics
-When the flag `OTEL_PYTHON_DJANGO_STOMP_INSTRUMENT` has `False` value traces and metrics will not be generated.
-Use this to supress the django-stomp instrumentation.
+#### Supress django-outbox-pattern traces and metrics
+When the flag `OTEL_PYTHON_DJANGO_OUTBOX_PATTERN_INSTRUMENT` has `False` value traces and metrics will not be generated.
+Use this to supress the django-outbox-pattern-instrumentation instrumentation.
 
 #### HOW TO CONTRIBUTE ?
 Look the [contributing](./CONTRIBUTING.md) specs

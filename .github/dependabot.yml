@@ -4,14 +4,22 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+      time: "08:00"
+      day: "sunday"
     reviewers:
       - "juntossomosmais/core"
       - "juntossomosmais/loyalty"
       - "juntossomosmais/loja-virtual"
+    groups:
+      patches:
+        update-types:
+          - "patch"
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "monthly"
+      time: "08:00"
+      day: "sunday"
     reviewers:
       - "juntossomosmais/core"
       - "juntossomosmais/loyalty"

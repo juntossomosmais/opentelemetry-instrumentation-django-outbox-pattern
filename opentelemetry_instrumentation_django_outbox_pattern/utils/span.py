@@ -12,9 +12,11 @@ from opentelemetry.trace import SpanKind
 def enrich_span_with_host_data(span: Span):
     """Helper function add broker SpanAttributes"""
     system = getattr(settings, "STOMP_SYSTEM", None) or "rabbitmq"
+    outbox_pattern_settings = getattr(settings, "DJANGO_OUTBOX_PATTERN")  # noqa
+    host, port = outbox_pattern_settings["DEFAULT_STOMP_HOST_AND_PORTS"][0]
     attributes = {
-        SpanAttributes.NET_PEER_NAME: settings.STOMP_SERVER_HOST,
-        SpanAttributes.NET_PEER_PORT: settings.STOMP_SERVER_PORT,
+        SpanAttributes.NET_PEER_NAME: host,
+        SpanAttributes.NET_PEER_PORT: port,
         SpanAttributes.MESSAGING_SYSTEM: system,
     }
     span.set_attributes(attributes)
@@ -28,9 +30,10 @@ def enrich_span(
     body: typing.Dict,
 ) -> None:
     """Helper function add SpanAttributes"""
+    conversation_id = str(headers.get("dop-correlation-id") or headers.get("correlation-id"))
     attributes = {
-        SpanAttributes.MESSAGING_DESTINATION: destination,
-        SpanAttributes.MESSAGING_CONVERSATION_ID: str(headers.get("correlation-id")),
+        SpanAttributes.MESSAGING_DESTINATION_NAME: destination,
+        SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID: conversation_id,
         SpanAttributes.MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES: sys.getsizeof(json.dumps(body)),
     }
     if operation is not None:
@@ -58,4 +61,26 @@ def get_span(
             headers=headers,
             body=body,
         )
+    return span
+
+
+def get_messaging_ack_nack_span(
+    tracer: Tracer,
+    operation: str,  # ack or nack
+    process_span: Span,
+) -> Span:
+    """Helper function to mount span and call function to set SpanAttributes"""
+    destination = process_span._attributes.get(SpanAttributes.MESSAGING_DESTINATION_NAME, "UNKNOWN")
+    conversation_id = process_span._attributes.get(SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID, "UNKNOWN")
+    span_name = f"ack {destination}" if operation == "ack" else f"nack {destination}"
+
+    span = tracer.start_span(name=span_name, kind=SpanKind.CONSUMER)
+    if span.is_recording():
+        attributes = {
+            SpanAttributes.MESSAGING_OPERATION: operation,
+            SpanAttributes.MESSAGING_DESTINATION_NAME: destination,
+            SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID: conversation_id,
+        }
+        span.set_attributes(attributes)
+        enrich_span_with_host_data(span)
     return span

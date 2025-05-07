@@ -5,4 +5,11 @@
 # -x Print commands and their arguments as they are executed.
 set -e
 
-tox
+REPORTS_FOLDER_PATH=tests-reports
+
+coverage erase
+coverage run --source='.' manage.py test
+coverage combine
+coverage report
+coverage html -d $REPORTS_FOLDER_PATH/html
+coverage xml -o $REPORTS_FOLDER_PATH/coverage.xml

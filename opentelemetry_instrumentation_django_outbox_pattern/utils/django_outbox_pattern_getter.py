@@ -4,7 +4,7 @@ from opentelemetry.propagators.textmap import CarrierT
 from opentelemetry.propagators.textmap import Getter
 
 
-class DjangoStompGetter(Getter[CarrierT]):
+class DjangoOutboxPatternGetter(Getter[CarrierT]):
     """Propagators class to get trace-parent header from a message from messaging broker"""
 
     def get(self, carrier: CarrierT, key: str) -> typing.Optional[typing.List[str]]:

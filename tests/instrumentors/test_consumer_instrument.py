@@ -1,3 +1,6 @@
+import json
+
+from unittest.mock import MagicMock
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -6,11 +9,15 @@ from django.test import TransactionTestCase
 from django_outbox_pattern.factories import factory_consumer
 from django_outbox_pattern.headers import get_message_headers
 from django_outbox_pattern.models import Published
+from django_outbox_pattern.models import Received
 from opentelemetry.semconv.trace import MessagingOperationValues
 from opentelemetry.semconv.trace import SpanAttributes
 from request_id_django_log import local_threading
 from stomp.listener import TestListener
 
+from opentelemetry_instrumentation_django_outbox_pattern.instrumentors.consumer_instrument import (
+    _logger as consumer_logger,
+)
 from tests.support.helpers_tests import TestBase
 
 
@@ -166,3 +173,54 @@ class TestConsumerInstrument(ConsumerInstrumentBase):
         )
         del nack_expected_attributes["messaging.message.payload_size_bytes"]
         self.assertEqual(dict(nack_span.attributes), nack_expected_attributes)
+
+    def test_should_handle_exception_in_common_ack(self):
+        # Arrange
+        self.consumer.connection.send_frame = MagicMock()
+
+        # Act
+        with self.assertLogs(logger=consumer_logger, level="WARNING") as log:
+            self.consumer.connection.ack("message_fake_id")
+            self.consumer.stop()
+
+        # Assert
+        self.assertIn(
+            "An exception occurred while trying to set ack/nack span.",
+            log.output[0],
+        )
+
+    def test_should_handle_exception_in_common_nack(self):
+        # Arrange
+        self.consumer.connection.send_frame = MagicMock()
+
+        # Act
+        with self.assertLogs(logger=consumer_logger, level="WARNING") as log:
+            self.consumer.connection.nack("message_fake_id")
+            self.consumer.stop()
+
+        # Assert
+        self.assertIn(
+            "An exception occurred while trying to set ack/nack span.",
+            log.output[0],
+        )
+
+    def test_should_handle_exception_in_on_message_error(self):
+        # Arrange
+        Received.objects.create(msg_id="message_fake_id")
+        self.consumer.connection.send_frame = MagicMock()
+
+        # Act
+        with self.assertLogs(logger=consumer_logger, level="WARNING") as log:
+            self.consumer.message_handler(
+                json.dumps(self.fake_payload_body),
+                {
+                    "message-id": "message_fake_id",
+                },
+            )
+            self.consumer.stop()
+
+        # Assert
+        self.assertIn(
+            "An exception occurred in the instrument_callback wrap.",
+            log.output[0],
+        )

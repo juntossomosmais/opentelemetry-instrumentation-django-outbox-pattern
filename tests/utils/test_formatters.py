@@ -23,6 +23,23 @@ class FormattersTestCase(TestCase):
         result = format_consumer_destination(headers)
         self.assertEqual(result, "test-exchange:test-queue")
 
+    def test_format_consumer_destination_when_tshoot_destination(self):
+        """Test format_consumer_destination when using tshoot-destination"""
+        headers = {
+            "destination": "/queue/test-queue",
+            "tshoot-destination": "/queue/test-queue",
+        }
+        result = format_consumer_destination(headers)
+        self.assertEqual(result, "queue:test-queue")
+
+    def test_format_consumer_destination_when_no_dop_nor_tshoot_destination(self):
+        """Test format_consumer_destination when no dop-msg-destination nor tshoot-destination"""
+        headers = {
+            "destination": "/exchange/test-exchange/test-routing-key",
+        }
+        result = format_consumer_destination(headers)
+        self.assertEqual(result, "test-exchange:test-routing-key")
+
     def test_format_publisher_destination(self):
         """Test format_publisher_destination"""
         destination = "/exchange/test-exchange/test-routing-key"

@@ -12,7 +12,7 @@ def format_consumer_destination(headers: typing.Dict) -> str:
     {exchange}:{routing_key}
     """
     destination = headers.get("destination", "")
-    dop_destination = headers.get("dop-msg-destination", "")
+    dop_destination = headers.get("dop-msg-destination", "") or headers.get("tshoot-destination", destination)
     split_destination = dop_destination.split("/")
     routing_key = split_destination[-1]
     exchange = split_destination[-2]

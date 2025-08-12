@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "opentelemetry-instrumentation-django-outbox-pattern"
-version = "0.0.1"
+version = "0.0.2"
 description = "Opentelemetry instrumentor for django-outbox-pattern package"
 authors = ["Juntos Somos Mais <labs@juntossomosmais.com.br>"]
 readme = "README.md"

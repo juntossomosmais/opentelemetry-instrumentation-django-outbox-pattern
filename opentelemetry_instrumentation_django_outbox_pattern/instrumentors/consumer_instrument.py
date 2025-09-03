@@ -21,6 +21,7 @@ from ..utils.formatters import format_consumer_destination
 from ..utils.shared_types import CallbackHookT
 from ..utils.span import get_messaging_ack_nack_span
 from ..utils.span import get_span
+from ..utils.traced_thread_pool_executor import TracedThreadPoolExecutor
 
 _django_outbox_pattern_getter = DjangoOutboxPatternGetter()
 
@@ -95,12 +96,21 @@ class ConsumerInstrument:
             finally:
                 context.detach(token)
 
+        def wrapper_create_new_worker_executor(wrapped, instance, *args, **kwargs):
+            return TracedThreadPoolExecutor(
+                tracer=trace.get_tracer(__name__),
+                max_workers=1,
+                thread_name_prefix=instance.listener_name,
+            )
+
         wrapt.wrap_function_wrapper(Consumer, "message_handler", wrapped_message_handler)
+        wrapt.wrap_function_wrapper(Consumer, "_create_new_worker_executor", wrapper_create_new_worker_executor)
         wrapt.wrap_function_wrapper(StompConnection12, "ack", wrapper_ack)
         wrapt.wrap_function_wrapper(StompConnection12, "nack", wrapper_nack)
 
     @staticmethod
     def uninstrument():
         unwrap(Consumer, "message_handler")
+        unwrap(Consumer, "_create_new_worker_executor")
         unwrap(StompConnection12, "ack")
         unwrap(StompConnection12, "nack")

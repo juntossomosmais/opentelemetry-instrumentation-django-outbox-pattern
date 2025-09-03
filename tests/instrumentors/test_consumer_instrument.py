@@ -10,8 +10,14 @@ from django_outbox_pattern.factories import factory_consumer
 from django_outbox_pattern.headers import get_message_headers
 from django_outbox_pattern.models import Published
 from django_outbox_pattern.models import Received
+from opentelemetry.semconv._incubating.attributes.messaging_attributes import MESSAGING_DESTINATION_NAME
+from opentelemetry.semconv._incubating.attributes.messaging_attributes import MESSAGING_MESSAGE_BODY_SIZE
+from opentelemetry.semconv._incubating.attributes.messaging_attributes import MESSAGING_MESSAGE_CONVERSATION_ID
+from opentelemetry.semconv._incubating.attributes.messaging_attributes import MESSAGING_OPERATION_TYPE
+from opentelemetry.semconv._incubating.attributes.messaging_attributes import MESSAGING_SYSTEM
+from opentelemetry.semconv._incubating.attributes.net_attributes import NET_PEER_NAME
+from opentelemetry.semconv._incubating.attributes.net_attributes import NET_PEER_PORT
 from opentelemetry.semconv.trace import MessagingOperationValues
-from opentelemetry.semconv.trace import SpanAttributes
 from request_id_django_log import local_threading
 from stomp.listener import TestListener
 
@@ -50,12 +56,12 @@ class ConsumerInstrumentBase(TestBase, TransactionTestCase):
 
         host, port = django_settings.DJANGO_OUTBOX_PATTERN["DEFAULT_STOMP_HOST_AND_PORTS"][0]
         return {
-            SpanAttributes.MESSAGING_DESTINATION_NAME: self.test_queue_name,
-            SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID: self.correlation_id,
-            SpanAttributes.MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES: mock_payload_size("x"),
-            SpanAttributes.NET_PEER_NAME: host,
-            SpanAttributes.NET_PEER_PORT: port,
-            SpanAttributes.MESSAGING_SYSTEM: "rabbitmq",
+            MESSAGING_DESTINATION_NAME: self.test_queue_name,
+            MESSAGING_MESSAGE_CONVERSATION_ID: self.correlation_id,
+            MESSAGING_MESSAGE_BODY_SIZE: mock_payload_size("x"),
+            NET_PEER_NAME: host,
+            NET_PEER_PORT: port,
+            MESSAGING_SYSTEM: "rabbitmq",
             **custom_attributes_override,
         }
 
@@ -101,8 +107,8 @@ class TestConsumerInstrument(ConsumerInstrumentBase):
             self.expected_span_attributes(
                 mock_payload_size,
                 {
-                    SpanAttributes.MESSAGING_OPERATION: str(MessagingOperationValues.RECEIVE.value),
-                    SpanAttributes.MESSAGING_DESTINATION_NAME: "topic:consumer.v1",
+                    MESSAGING_OPERATION_TYPE: str(MessagingOperationValues.RECEIVE.value),
+                    MESSAGING_DESTINATION_NAME: "topic:consumer.v1",
                 },
             ),
         )
@@ -114,11 +120,11 @@ class TestConsumerInstrument(ConsumerInstrumentBase):
         ack_expected_attributes = self.expected_span_attributes(
             mock_payload_size,
             {
-                SpanAttributes.MESSAGING_OPERATION: "ack",
-                SpanAttributes.MESSAGING_DESTINATION_NAME: "topic:consumer.v1",
+                MESSAGING_OPERATION_TYPE: "ack",
+                MESSAGING_DESTINATION_NAME: "topic:consumer.v1",
             },
         )
-        del ack_expected_attributes["messaging.message.payload_size_bytes"]
+        del ack_expected_attributes["messaging.message.body.size"]
         self.assertEqual(dict(ack_span.attributes), ack_expected_attributes)
 
     @patch("sys.getsizeof", return_value=1)
@@ -154,8 +160,8 @@ class TestConsumerInstrument(ConsumerInstrumentBase):
             self.expected_span_attributes(
                 mock_payload_size,
                 {
-                    SpanAttributes.MESSAGING_OPERATION: str(MessagingOperationValues.RECEIVE.value),
-                    SpanAttributes.MESSAGING_DESTINATION_NAME: "topic:consumer.v1",
+                    MESSAGING_OPERATION_TYPE: str(MessagingOperationValues.RECEIVE.value),
+                    MESSAGING_DESTINATION_NAME: "topic:consumer.v1",
                 },
             ),
         )
@@ -167,11 +173,11 @@ class TestConsumerInstrument(ConsumerInstrumentBase):
         nack_expected_attributes = self.expected_span_attributes(
             mock_payload_size,
             {
-                SpanAttributes.MESSAGING_OPERATION: "nack",
-                SpanAttributes.MESSAGING_DESTINATION_NAME: "topic:consumer.v1",
+                MESSAGING_OPERATION_TYPE: "nack",
+                MESSAGING_DESTINATION_NAME: "topic:consumer.v1",
             },
         )
-        del nack_expected_attributes["messaging.message.payload_size_bytes"]
+        del nack_expected_attributes["messaging.message.body.size"]
         self.assertEqual(dict(nack_span.attributes), nack_expected_attributes)
 
     def test_should_handle_exception_in_common_ack(self):

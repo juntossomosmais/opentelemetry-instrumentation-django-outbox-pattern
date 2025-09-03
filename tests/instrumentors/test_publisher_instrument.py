@@ -6,7 +6,13 @@ from uuid import uuid4
 from django.core.management import call_command
 from django_outbox_pattern.management.commands.publish import Command
 from django_outbox_pattern.models import Published
-from opentelemetry.semconv.trace import SpanAttributes
+from opentelemetry.semconv._incubating.attributes.messaging_attributes import MESSAGING_DESTINATION_NAME
+from opentelemetry.semconv._incubating.attributes.messaging_attributes import MESSAGING_MESSAGE_BODY_SIZE
+from opentelemetry.semconv._incubating.attributes.messaging_attributes import MESSAGING_MESSAGE_CONVERSATION_ID
+from opentelemetry.semconv._incubating.attributes.messaging_attributes import MESSAGING_OPERATION_TYPE
+from opentelemetry.semconv._incubating.attributes.messaging_attributes import MESSAGING_SYSTEM
+from opentelemetry.semconv._incubating.attributes.net_attributes import NET_PEER_NAME
+from opentelemetry.semconv._incubating.attributes.net_attributes import NET_PEER_PORT
 from request_id_django_log import local_threading
 
 from opentelemetry_instrumentation_django_outbox_pattern.instrumentors.publisher_instrument import (
@@ -35,12 +41,12 @@ class PublisherInstrumentBase(TestBase):
 
         host, port = django_settings.DJANGO_OUTBOX_PATTERN["DEFAULT_STOMP_HOST_AND_PORTS"][0]
         return {
-            SpanAttributes.MESSAGING_DESTINATION_NAME: self.test_queue_name,
-            SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID: self.correlation_id,
-            SpanAttributes.MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES: mock_payload_size("x"),
-            SpanAttributes.NET_PEER_NAME: host,
-            SpanAttributes.NET_PEER_PORT: port,
-            SpanAttributes.MESSAGING_SYSTEM: "rabbitmq",
+            MESSAGING_DESTINATION_NAME: self.test_queue_name,
+            MESSAGING_MESSAGE_CONVERSATION_ID: self.correlation_id,
+            MESSAGING_MESSAGE_BODY_SIZE: mock_payload_size("x"),
+            NET_PEER_NAME: host,
+            NET_PEER_PORT: port,
+            MESSAGING_SYSTEM: "rabbitmq",
         }
 
 
@@ -113,13 +119,13 @@ class TestPublisherToBrokerInstrument(PublisherInstrumentBase):
 
         host, port = django_settings.DJANGO_OUTBOX_PATTERN["DEFAULT_STOMP_HOST_AND_PORTS"][0]
         return {
-            SpanAttributes.MESSAGING_DESTINATION_NAME: format_publisher_destination(self.test_queue_name),
-            SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID: self.correlation_id,
-            SpanAttributes.MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES: mock_payload_size("x"),
-            SpanAttributes.MESSAGING_OPERATION: "publish",
-            SpanAttributes.NET_PEER_NAME: host,
-            SpanAttributes.NET_PEER_PORT: port,
-            SpanAttributes.MESSAGING_SYSTEM: "rabbitmq",
+            MESSAGING_DESTINATION_NAME: format_publisher_destination(self.test_queue_name),
+            MESSAGING_MESSAGE_CONVERSATION_ID: self.correlation_id,
+            MESSAGING_MESSAGE_BODY_SIZE: mock_payload_size("x"),
+            MESSAGING_OPERATION_TYPE: "publish",
+            NET_PEER_NAME: host,
+            NET_PEER_PORT: port,
+            MESSAGING_SYSTEM: "rabbitmq",
         }
 
     @patch("sys.getsizeof", return_value=1)
@@ -154,13 +160,13 @@ class TestPublisherToBrokerRaisesInstrument(PublisherInstrumentBase):
 
         host, port = django_settings.DJANGO_OUTBOX_PATTERN["DEFAULT_STOMP_HOST_AND_PORTS"][0]
         return {
-            SpanAttributes.MESSAGING_DESTINATION_NAME: format_publisher_destination(self.test_queue_name),
-            SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID: self.correlation_id,
-            SpanAttributes.MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES: mock_payload_size("x"),
-            SpanAttributes.MESSAGING_OPERATION: "publish",
-            SpanAttributes.NET_PEER_NAME: host,
-            SpanAttributes.NET_PEER_PORT: port,
-            SpanAttributes.MESSAGING_SYSTEM: "rabbitmq",
+            MESSAGING_DESTINATION_NAME: format_publisher_destination(self.test_queue_name),
+            MESSAGING_MESSAGE_CONVERSATION_ID: self.correlation_id,
+            MESSAGING_MESSAGE_BODY_SIZE: mock_payload_size("x"),
+            MESSAGING_OPERATION_TYPE: "publish",
+            NET_PEER_NAME: host,
+            NET_PEER_PORT: port,
+            MESSAGING_SYSTEM: "rabbitmq",
         }
 
     @patch("sys.getsizeof", return_value=1)

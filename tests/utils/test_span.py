@@ -3,7 +3,13 @@ from unittest.mock import patch
 
 from django.test import TestCase
 from django.test import override_settings
-from opentelemetry.semconv.trace import SpanAttributes
+from opentelemetry.semconv._incubating.attributes.messaging_attributes import MESSAGING_DESTINATION_NAME
+from opentelemetry.semconv._incubating.attributes.messaging_attributes import MESSAGING_MESSAGE_BODY_SIZE
+from opentelemetry.semconv._incubating.attributes.messaging_attributes import MESSAGING_MESSAGE_CONVERSATION_ID
+from opentelemetry.semconv._incubating.attributes.messaging_attributes import MESSAGING_OPERATION_TYPE
+from opentelemetry.semconv._incubating.attributes.messaging_attributes import MESSAGING_SYSTEM
+from opentelemetry.semconv._incubating.attributes.net_attributes import NET_PEER_NAME
+from opentelemetry.semconv._incubating.attributes.net_attributes import NET_PEER_PORT
 from opentelemetry.trace import SpanKind
 
 from opentelemetry_instrumentation_django_outbox_pattern.utils.span import enrich_span
@@ -27,9 +33,9 @@ class SpanUtilsTestCase(TestCase):
 
         mock_span.set_attributes.assert_called_once_with(
             {
-                SpanAttributes.NET_PEER_NAME: "test-host",
-                SpanAttributes.NET_PEER_PORT: 61613,
-                SpanAttributes.MESSAGING_SYSTEM: "test-system",
+                NET_PEER_NAME: "test-host",
+                NET_PEER_PORT: 61613,
+                MESSAGING_SYSTEM: "test-system",
             }
         )
 
@@ -46,10 +52,10 @@ class SpanUtilsTestCase(TestCase):
 
         # Check that the correct attributes were set
         attributes = mock_span.set_attributes.call_args[0][0]
-        self.assertEqual(attributes[SpanAttributes.MESSAGING_DESTINATION_NAME], destination)
-        self.assertEqual(attributes[SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID], "test-correlation-id")
-        self.assertEqual(attributes[SpanAttributes.MESSAGING_OPERATION], operation)
-        self.assertIn(SpanAttributes.MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES, attributes)
+        self.assertEqual(attributes[MESSAGING_DESTINATION_NAME], destination)
+        self.assertEqual(attributes[MESSAGING_MESSAGE_CONVERSATION_ID], "test-correlation-id")
+        self.assertEqual(attributes[MESSAGING_OPERATION_TYPE], operation)
+        self.assertIn(MESSAGING_MESSAGE_BODY_SIZE, attributes)
 
         # Check that enrich_span_with_host_data was called
         mock_enrich_span_with_host_data.assert_called_once_with(mock_span)
@@ -67,10 +73,10 @@ class SpanUtilsTestCase(TestCase):
 
         # Check that the correct attributes were set
         attributes = mock_span.set_attributes.call_args[0][0]
-        self.assertEqual(attributes[SpanAttributes.MESSAGING_DESTINATION_NAME], destination)
-        self.assertEqual(attributes[SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID], "test-correlation-id")
-        self.assertNotIn(SpanAttributes.MESSAGING_OPERATION, attributes)
-        self.assertIn(SpanAttributes.MESSAGING_MESSAGE_PAYLOAD_SIZE_BYTES, attributes)
+        self.assertEqual(attributes[MESSAGING_DESTINATION_NAME], destination)
+        self.assertEqual(attributes[MESSAGING_MESSAGE_CONVERSATION_ID], "test-correlation-id")
+        self.assertNotIn(MESSAGING_OPERATION_TYPE, attributes)
+        self.assertIn(MESSAGING_MESSAGE_BODY_SIZE, attributes)
 
         # Check that enrich_span_with_host_data was called
         mock_enrich_span_with_host_data.assert_called_once_with(mock_span)
@@ -120,8 +126,8 @@ class SpanUtilsTestCase(TestCase):
 
             mock_process_span = MagicMock()
             mock_process_span._attributes = {
-                SpanAttributes.MESSAGING_DESTINATION_NAME: destination,
-                SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID: "test-correlation-id",
+                MESSAGING_DESTINATION_NAME: destination,
+                MESSAGING_MESSAGE_CONVERSATION_ID: "test-correlation-id",
             }
 
             span_name = f"{operation} test-destination"
@@ -132,9 +138,9 @@ class SpanUtilsTestCase(TestCase):
 
             # Check that the correct attributes were set
             attributes = mock_span.set_attributes.call_args[0][0]
-            self.assertEqual(attributes[SpanAttributes.MESSAGING_OPERATION], operation)
-            self.assertEqual(attributes[SpanAttributes.MESSAGING_DESTINATION_NAME], destination)
-            self.assertEqual(attributes[SpanAttributes.MESSAGING_MESSAGE_CONVERSATION_ID], "test-correlation-id")
+            self.assertEqual(attributes[MESSAGING_OPERATION_TYPE], operation)
+            self.assertEqual(attributes[MESSAGING_DESTINATION_NAME], destination)
+            self.assertEqual(attributes[MESSAGING_MESSAGE_CONVERSATION_ID], "test-correlation-id")
 
             # Check that enrich_span_with_host_data was called
             mock_enrich_span_with_host_data.assert_called_once_with(mock_span)

@@ -93,6 +93,11 @@ class PublisherInstrument:
                 )
                 return message_headers
 
+        def publish_message_from_database(wrapped, instance, args, kwargs):
+            with tracer.start_as_current_span("OUTBOX-PUBLISHER"):
+                return wrapped(*args, **kwargs)
+
+        wrapt.wrap_function_wrapper(Producer, "publish_message_from_database", publish_message_from_database)
         wrapt.wrap_function_wrapper(Producer, "_send_with_retry", on_send_message)
         wrapt.wrap_function_wrapper(outbox_headers_module, "get_message_headers", on_get_message_headers)
 
@@ -100,4 +105,5 @@ class PublisherInstrument:
     def uninstrument():
         """Uninstrument publisher functions from django-outbox-pattern"""
         unwrap(Producer, "_send_with_retry")
+        unwrap(Producer, "publish_message_from_database")
         unwrap(outbox_headers_module, "get_message_headers")

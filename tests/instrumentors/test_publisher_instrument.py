@@ -1,4 +1,3 @@
-from io import StringIO
 from unittest.mock import PropertyMock
 from unittest.mock import patch
 from uuid import uuid4
@@ -6,6 +5,7 @@ from uuid import uuid4
 from django.core.management import call_command
 from django_outbox_pattern.management.commands.publish import Command
 from django_outbox_pattern.models import Published
+from django_outbox_pattern.producers import _logger as outbox_producer_logger
 from opentelemetry.semconv._incubating.attributes.messaging_attributes import MESSAGING_DESTINATION_NAME
 from opentelemetry.semconv._incubating.attributes.messaging_attributes import MESSAGING_MESSAGE_BODY_SIZE
 from opentelemetry.semconv._incubating.attributes.messaging_attributes import MESSAGING_MESSAGE_CONVERSATION_ID
@@ -16,7 +16,7 @@ from opentelemetry.semconv._incubating.attributes.net_attributes import NET_PEER
 from request_id_django_log import local_threading
 
 from opentelemetry_instrumentation_django_outbox_pattern.instrumentors.publisher_instrument import (
-    _logger as publisher_logger,
+    _logger as publisher_instrument_logger,
 )
 from opentelemetry_instrumentation_django_outbox_pattern.utils.formatters import format_publisher_destination
 from tests.support.helpers_tests import TestBase
@@ -75,7 +75,7 @@ class TestPublisherSaveInstrumentRaises(PublisherInstrumentBase):
         body = {"raise_publisher_hook_exception": True, **self.fake_payload_body}
 
         # Act
-        with self.assertLogs(logger=publisher_logger, level="WARNING") as publisher_log:
+        with self.assertLogs(logger=publisher_instrument_logger, level="WARNING") as publisher_log:
             published_create = Published.objects.create(
                 destination=self.test_queue_name,
                 body=body,
@@ -97,7 +97,7 @@ class TestPublisherSaveInstrumentRaises(PublisherInstrumentBase):
     @patch("sys.getsizeof", return_value=1)
     def test_should_log_exception_if_it_was_raised_to_instrument(self, mock_payload_size, mock_get_span):
         # Act
-        with self.assertLogs(logger=publisher_logger, level="WARNING") as publisher_log:
+        with self.assertLogs(logger=publisher_instrument_logger, level="WARNING") as publisher_log:
             published_create = Published.objects.create(
                 destination=self.test_queue_name,
                 body=self.fake_payload_body,
@@ -141,12 +141,12 @@ class TestPublisherToBrokerInstrument(PublisherInstrumentBase):
 
         # Arrange send
         Command.running = PropertyMock(side_effect=[True, False])
-        out = StringIO()
         self.reset_trace()
 
         # Act send
-        call_command("publish", stdout=out)
-        self.assertIn("Message published with body", out.getvalue())
+        with self.assertLogs(logger=outbox_producer_logger, level="INFO") as outbox_producer_log:
+            call_command("publish")
+        self.assertIn("Message published with id", "\n".join(outbox_producer_log.output))
 
         # Assert send
         finished_spans = self.get_finished_spans()
@@ -185,13 +185,15 @@ class TestPublisherToBrokerRaisesInstrument(PublisherInstrumentBase):
 
         # Arrange send
         Command.running = PropertyMock(side_effect=[True, False])
-        out = StringIO()
         self.reset_trace()
 
         # Act send
-        with self.assertLogs(logger=publisher_logger, level="WARNING") as publisher_log:
-            call_command("publish", stdout=out)
-        self.assertIn("Message published with body", out.getvalue())
+        with (
+            self.assertLogs(logger=publisher_instrument_logger, level="WARNING") as publisher_log,
+            self.assertLogs(logger=outbox_producer_logger, level="INFO") as outbox_producer_log,
+        ):
+            call_command("publish")
+        self.assertIn("Message published with id", "\n".join(outbox_producer_log.output))
 
         # Assert send
         finished_spans = self.get_finished_spans()
@@ -220,12 +222,14 @@ class TestPublisherToBrokerRaisesInstrument(PublisherInstrumentBase):
         # Arrange send
         self.reset_trace()
         Command.running = PropertyMock(side_effect=[True, False])
-        out = StringIO()
 
         # Act send
-        with self.assertLogs(logger=publisher_logger, level="WARNING") as publisher_log:
-            call_command("publish", stdout=out)
-        self.assertIn("Message published with body", out.getvalue())
+        with (
+            self.assertLogs(logger=publisher_instrument_logger, level="WARNING") as publisher_log,
+            self.assertLogs(logger=outbox_producer_logger, level="INFO") as outbox_producer_log,
+        ):
+            call_command("publish")
+        self.assertIn("Message published with id", "\n".join(outbox_producer_log.output))
 
         # Assert
         finished_spans = self.get_finished_spans()

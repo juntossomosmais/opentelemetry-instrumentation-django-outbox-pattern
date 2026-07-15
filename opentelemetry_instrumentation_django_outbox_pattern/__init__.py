@@ -79,7 +79,7 @@ class DjangoOutboxPatternInstrumentor(BaseInstrumentor):
         Function to unwrap publisher and consumer functions from django-outbox-pattern
         """
         if hasattr(self, "__opentelemetry_tracer_provider"):
-            delattr(self, "__opentelemetry_tracer_provider")
+            delattr(self, "__opentelemetry_tracer_provider")  # noqa: B043
         ConsumerInstrument().uninstrument()
         PublisherInstrument().uninstrument()
 

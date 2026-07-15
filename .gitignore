@@ -300,3 +300,4 @@ modules.xml
 # Custom entries
 
 tests-reports
+test_db-*

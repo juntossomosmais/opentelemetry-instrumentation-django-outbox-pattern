@@ -10,8 +10,8 @@ from opentelemetry.semconv._incubating.attributes.messaging_attributes import ME
 from opentelemetry.semconv._incubating.attributes.messaging_attributes import MESSAGING_MESSAGE_CONVERSATION_ID
 from opentelemetry.semconv._incubating.attributes.messaging_attributes import MESSAGING_OPERATION_TYPE
 from opentelemetry.semconv._incubating.attributes.messaging_attributes import MESSAGING_SYSTEM
-from opentelemetry.semconv._incubating.attributes.net_attributes import NET_PEER_NAME
-from opentelemetry.semconv._incubating.attributes.net_attributes import NET_PEER_PORT
+from opentelemetry.semconv.attributes.server_attributes import SERVER_ADDRESS
+from opentelemetry.semconv.attributes.server_attributes import SERVER_PORT
 from opentelemetry.trace import SpanKind
 
 
@@ -21,8 +21,8 @@ def enrich_span_with_host_data(span: Span):
     outbox_pattern_settings = getattr(settings, "DJANGO_OUTBOX_PATTERN")  # noqa
     host, port = outbox_pattern_settings["DEFAULT_STOMP_HOST_AND_PORTS"][0]
     attributes = {
-        NET_PEER_NAME: host,
-        NET_PEER_PORT: port,
+        SERVER_ADDRESS: host,
+        SERVER_PORT: port,
         MESSAGING_SYSTEM: system,
     }
     span.set_attributes(attributes)

@@ -8,8 +8,8 @@ from opentelemetry.semconv._incubating.attributes.messaging_attributes import ME
 from opentelemetry.semconv._incubating.attributes.messaging_attributes import MESSAGING_MESSAGE_CONVERSATION_ID
 from opentelemetry.semconv._incubating.attributes.messaging_attributes import MESSAGING_OPERATION_TYPE
 from opentelemetry.semconv._incubating.attributes.messaging_attributes import MESSAGING_SYSTEM
-from opentelemetry.semconv._incubating.attributes.net_attributes import NET_PEER_NAME
-from opentelemetry.semconv._incubating.attributes.net_attributes import NET_PEER_PORT
+from opentelemetry.semconv.attributes.server_attributes import SERVER_ADDRESS
+from opentelemetry.semconv.attributes.server_attributes import SERVER_PORT
 from opentelemetry.trace import SpanKind
 
 from opentelemetry_instrumentation_django_outbox_pattern.utils.span import enrich_span
@@ -33,8 +33,8 @@ class SpanUtilsTestCase(TestCase):
 
         mock_span.set_attributes.assert_called_once_with(
             {
-                NET_PEER_NAME: "test-host",
-                NET_PEER_PORT: 61613,
+                SERVER_ADDRESS: "test-host",
+                SERVER_PORT: 61613,
                 MESSAGING_SYSTEM: "test-system",
             }
         )
